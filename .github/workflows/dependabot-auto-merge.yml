@@ -1,0 +1,30 @@
+# Auto-merges only the grouped npm-minor-and-patch Dependabot PRs once required
+# checks pass. Ungrouped npm majors, gomod, and github-actions bumps stay manual
+# since they carry more upgrade risk.
+name: Dependabot auto-merge
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Enable auto-merge for npm-minor-and-patch group
+        if: steps.metadata.outputs.dependency-group-name == 'npm-minor-and-patch'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,72 @@
+# Reusable GitHub Pages build+deploy. Callers pass their own build command, dist output
+# path, and secrets (via `secrets: inherit`) since those genuinely differ per app (Vite vs
+# Angular, different env vars baked in at build time). No cross-job artifact download —
+# build and deploy happen in this same workflow run, sidestepping the whole
+# actions/artifact-poisoning risk class entirely rather than needing runner.temp discipline.
+name: Deploy to GitHub Pages
+
+on:
+  workflow_call:
+    inputs:
+      build-command:
+        description: "Shell command that produces the production build (e.g. 'npm run build')"
+        required: true
+        type: string
+      dist-path:
+        description: "Path to the built output to publish (e.g. 'dist')"
+        required: true
+        type: string
+      node-version:
+        description: "Node version to set up"
+        required: false
+        type: string
+        default: "22"
+      spa-fallback:
+        description: "Copy index.html to 404.html so client-side routes survive a hard refresh/deep link on GitHub Pages"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: ${{ inputs.build-command }}
+
+      - name: SPA fallback (client-side routes on refresh)
+        if: inputs.spa-fallback
+        run: cp "${{ inputs.dist-path }}/index.html" "${{ inputs.dist-path }}/404.html"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ inputs.dist-path }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

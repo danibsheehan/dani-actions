@@ -26,6 +26,19 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      # Generic pass-through slots for a build that needs secret values baked in (e.g. a
+      # Vite app embedding VITE_* vars at build time). The `secrets` context can't be
+      # referenced inside `with:` (typed inputs) for a workflow_call job -- only through
+      # this dedicated `secrets:` mapping -- so a caller that needs this maps its own named
+      # secrets onto these generic slots and references $BUILD_SECRET_1 etc. in its
+      # build-command. Optional; unused slots are simply empty.
+      build-secret-1:
+        required: false
+      build-secret-2:
+        required: false
+      build-secret-3:
+        required: false
 
 permissions:
   contents: read
@@ -51,6 +64,10 @@ jobs:
       - run: npm ci
 
       - name: Build
+        env:
+          BUILD_SECRET_1: ${{ secrets.build-secret-1 }}
+          BUILD_SECRET_2: ${{ secrets.build-secret-2 }}
+          BUILD_SECRET_3: ${{ secrets.build-secret-3 }}
         run: ${{ inputs.build-command }}
 
       - name: SPA fallback (client-side routes on refresh)

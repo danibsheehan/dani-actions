@@ -165,6 +165,12 @@ e.g. an OpenAPI contract check), `coverage-thresholds` (default `"50 75"`), `ski
 `build-secret-1/2/3` pass-through as `deploy-github-pages.yml` (`secrets` can't be referenced
 inside `with:`).
 
+**Note on required-check names:** calling a reusable workflow's job from a job named
+`verify` renders each check as `verify / <job name>` — e.g. `verify / lint (app)`, `verify /
+test (app)` — not the bare job name. Get the exact strings from a real PR's checks (`gh pr
+checks <n>`) before setting your branch ruleset's required checks, not by guessing from this
+doc.
+
 Pin to `@v7` for this workflow (`npm-quality-gate.yml`, the single-job predecessor to this
 workflow, is removed as of `@v7` — repos still pinned to `@v4`/`@v5`/`@v6` are unaffected,
 since tags are immutable, but there's no reason to pin a new consumer to it).

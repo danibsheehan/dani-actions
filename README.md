@@ -123,7 +123,11 @@ on:
 
 jobs:
   quality:
-    uses: danibsheehan/dani-actions/.github/workflows/npm-quality-gate.yml@v4
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write # the Cobertura PR-comment step creates a check run, not just a comment
+    uses: danibsheehan/dani-actions/.github/workflows/npm-quality-gate.yml@v6
     with:
       stack-docs-command: python3 .github/scripts/check_stack_docs.py # omit if you don't have one
 ```
@@ -144,4 +148,13 @@ That's the whole thing for a repo with no special needs. Other inputs, all optio
   `build-secret-1/2/3` pass-through as `deploy-github-pages.yml`, for the same reason
   (`secrets` can't be referenced inside `with:`).
 
-Pin to `@v4` for this workflow.
+Pin to `@v6` for this workflow (`@v4`/`@v5` are missing `checks: write` in the job's own
+`permissions:` — the 5monkeys/cobertura-action PR-comment step needs it to create a check
+run and fails with "Resource not accessible by integration" without it; the calling job's
+`permissions:` block needs the same grant, since it bounds what the called job can request).
+
+**Note on the required-check name:** calling a reusable workflow from a job renders the
+check as `<your job id> / <called job's job id>` — since this workflow's inner job is also
+named `quality`, a caller job also named `quality` produces a required check literally named
+`quality / quality`, not bare `quality`. Set your branch ruleset's required check to match
+whatever actually shows up on a real PR, not the bare name.

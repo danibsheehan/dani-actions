@@ -105,3 +105,43 @@ job — use the explicit mapping whenever you need to rename a secret onto one o
 slots. If your build needs no secrets at all, `secrets: inherit` (as in the example above)
 is simpler and still correct — the generic slots just stay empty. Pin to `@v3` for this
 pattern (`@v2` predates the generic secret slots).
+
+### `npm-quality-gate.yml`
+
+The npm CI command set (`npm ci`, `format:check`, `lint`, a test command with coverage,
+`build`) turned out to be identical across every npm-based consuming repo before this was
+built — confirmed against each repo's actual `package.json`, not assumed. Always names its
+job `quality`, so every adopting repo's required check has the same name.
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    uses: danibsheehan/dani-actions/.github/workflows/npm-quality-gate.yml@v4
+    with:
+      stack-docs-command: python3 .github/scripts/check_stack_docs.py # omit if you don't have one
+```
+
+That's the whole thing for a repo with no special needs. Other inputs, all optional:
+
+- `test-command` / `build-command` — override if your app's scripts differ (e.g. Angular's
+  `npm run test:ci`), or need env vars baked in (`build-command: "VITE_API_BASE=... npm run build"`).
+- `run-audit` (default `true`), `skip-covered` (default `true`), `coverage-file` (default
+  `coverage/cobertura-coverage.xml`), `coverage-thresholds` (default `"50 75"`).
+- `app-paths` — a full `dorny/paths-filter` `filters:` block (including the `app:` key) to
+  skip lint/audit/test/build on PRs that touch none of those paths. `format:check` and
+  `npm ci` always run regardless — cheap enough that skipping them isn't worth the added
+  complexity.
+- `setup-chrome` (default `false`) — set `true` if your test runner needs a real browser
+  (e.g. Angular's).
+- Needs a secret baked into `test-command`/`build-command`? Same generic
+  `build-secret-1/2/3` pass-through as `deploy-github-pages.yml`, for the same reason
+  (`secrets` can't be referenced inside `with:`).
+
+Pin to `@v4` for this workflow.

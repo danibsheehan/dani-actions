@@ -72,7 +72,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v12
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@feat/go-verify
         with:
           go-version-file: ${{ inputs.go-version-file }}
           working-directory: ${{ inputs.working-directory }}
@@ -99,7 +99,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v12
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@feat/go-verify
         with:
           go-version-file: ${{ inputs.go-version-file }}
           working-directory: ${{ inputs.working-directory }}
@@ -134,14 +134,14 @@ jobs:
 
       - name: Merge Cobertura entries by file
         if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
-        uses: danibsheehan/dani-actions/.github/actions/merge-cobertura-by-file@v12
+        uses: danibsheehan/dani-actions/.github/actions/merge-cobertura-by-file@feat/go-verify
         with:
           input-path: ${{ inputs.working-directory }}/gha-cobertura-raw.xml
           output-path: ${{ inputs.working-directory }}/gha-cobertura.xml
 
       - name: Enforce coverage threshold
         if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
-        uses: danibsheehan/dani-actions/.github/actions/check-cobertura-threshold@v12
+        uses: danibsheehan/dani-actions/.github/actions/check-cobertura-threshold@feat/go-verify
         with:
           path: ${{ inputs.working-directory }}/gha-cobertura.xml
           minimum: ${{ inputs.coverage-threshold }}

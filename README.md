@@ -3,6 +3,16 @@
 Reusable GitHub Actions workflows shared across personal project repos, so a fix or
 improvement lands once instead of being hand-copied into every repo.
 
+## Versioning
+
+Every tag is cumulative — a new tag only adds or fixes workflows, it never removes or
+breaks an existing one. **All consuming repos pin every `danibsheehan/dani-actions/...`
+reference to the same tag: the latest one**, even for a workflow whose content hasn't
+changed since an earlier tag. When a new tag lands, sweep every repo's `.github/workflows/`
+and bump every reference to match — not just the one that motivated the release. This keeps
+"what version of dani-actions is repo X on" a single, unambiguous number instead of a
+per-workflow patchwork.
+
 ## Workflows
 
 ### `dependabot-auto-merge.yml`
@@ -26,11 +36,11 @@ permissions:
 
 jobs:
   auto-merge:
-    uses: danibsheehan/dani-actions/.github/workflows/dependabot-auto-merge.yml@v1
+    uses: danibsheehan/dani-actions/.github/workflows/dependabot-auto-merge.yml@v10
 ```
 
-Pin to a tag (`@v1`), not `@main` — a future change here shouldn't silently affect a
-consumer that hasn't opted in yet.
+Pin to a tag, not `@main` — a future change here shouldn't silently affect a consumer that
+hasn't opted in yet. See [Versioning](#versioning) above for which tag.
 
 ### `deploy-github-pages.yml`
 
@@ -63,16 +73,13 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: danibsheehan/dani-actions/.github/workflows/deploy-github-pages.yml@v2
+    uses: danibsheehan/dani-actions/.github/workflows/deploy-github-pages.yml@v10
     with:
       build-command: npm run build
       dist-path: dist
       spa-fallback: true # only if the app has client-side routes
     secrets: inherit
 ```
-
-Pin to `@v2` (this workflow was added after `@v1`, which only had `dependabot-auto-merge.yml`
-— existing `@v1` references are unaffected and don't need to change).
 
 **If your build needs secret values baked in** (e.g. a Vite app embedding `VITE_*` vars at
 build time): the `secrets` context can't be referenced inside `with:` — GitHub Actions
@@ -88,7 +95,7 @@ instead, and reference them by their generic env var name in `build-command`:
       contents: read
       pages: write
       id-token: write
-    uses: danibsheehan/dani-actions/.github/workflows/deploy-github-pages.yml@v3
+    uses: danibsheehan/dani-actions/.github/workflows/deploy-github-pages.yml@v10
     with:
       build-command: >-
         VITE_SUPABASE_URL="$BUILD_SECRET_1"
@@ -106,8 +113,7 @@ instead, and reference them by their generic env var name in `build-command`:
 `secrets: inherit` and an explicit `secrets:` mapping are mutually exclusive on the same
 job — use the explicit mapping whenever you need to rename a secret onto one of the generic
 slots. If your build needs no secrets at all, `secrets: inherit` (as in the example above)
-is simpler and still correct — the generic slots just stay empty. Pin to `@v3` for this
-pattern (`@v2` predates the generic secret slots).
+is simpler and still correct — the generic slots just stay empty.
 
 ### `npm-verify.yml`
 
@@ -133,7 +139,7 @@ jobs:
       contents: read
       pull-requests: write
       checks: write # the Cobertura PR-comment step creates a check run, not just a comment
-    uses: danibsheehan/dani-actions/.github/workflows/npm-verify.yml@v7
+    uses: danibsheehan/dani-actions/.github/workflows/npm-verify.yml@v10
     with:
       packages: |
         [{"name": "app", "path": ".", "test-command": "npm run test:coverage",
@@ -171,9 +177,9 @@ test (app)` — not the bare job name. Get the exact strings from a real PR's ch
 checks <n>`) before setting your branch ruleset's required checks, not by guessing from this
 doc.
 
-Pin to `@v7` for this workflow (`npm-quality-gate.yml`, the single-job predecessor to this
-workflow, is removed as of `@v7` — repos still pinned to `@v4`/`@v5`/`@v6` are unaffected,
-since tags are immutable, but there's no reason to pin a new consumer to it).
+`npm-quality-gate.yml`, the single-job predecessor to this workflow, was removed as of `v7`
+— repos still pinned to `@v4`/`@v5`/`@v6` are unaffected, since tags are immutable, but
+there's no reason to pin a new consumer to it. See [Versioning](#versioning) above.
 
 ### `codeql-js.yml`
 
@@ -212,10 +218,10 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: danibsheehan/dani-actions/.github/workflows/codeql-js.yml@v8
+    uses: danibsheehan/dani-actions/.github/workflows/codeql-js.yml@v10
 ```
 
-Pin to `@v8` for this workflow.
+See [Versioning](#versioning) above.
 
 ### `dependency-review.yml`
 
@@ -235,10 +241,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: danibsheehan/dani-actions/.github/workflows/dependency-review.yml@v8
+    uses: danibsheehan/dani-actions/.github/workflows/dependency-review.yml@v10
 ```
 
-Optional input: `fail-on-severity` (default `"high"`). Pin to `@v8` for this workflow.
+Optional input: `fail-on-severity` (default `"high"`). See [Versioning](#versioning) above.
 
 ### `pr-guide.yml`
 
@@ -260,7 +266,7 @@ on:
 
 jobs:
   guide:
-    uses: danibsheehan/dani-actions/.github/workflows/pr-guide.yml@v9
+    uses: danibsheehan/dani-actions/.github/workflows/pr-guide.yml@v10
     with:
       labels: |
         [{"name": "area: app", "color": "c2e0c6", "description": "App shell, layout, or routing"}]
@@ -268,7 +274,7 @@ jobs:
 
 `labels` is optional (default `"[]"`) — `actions/labeler` auto-creates missing labels on its
 own given `issues: write`, just without curated colors/descriptions, so only pass this if
-you want those. Pin to `@v9` for this workflow.
+you want those. See [Versioning](#versioning) above.
 
 **Note on trigger choice:** use `pull_request_target` with `synchronize` included, not plain
 `pull_request` — the guide/labels then stay current as the PR evolves rather than freezing
@@ -324,7 +330,7 @@ thresholds:
 ```
 
 Optional inputs: `node-version-file` (default `.nvmrc`), `lighthouserc-path` (default
-`./.lighthouserc.json`). Pin to `@v10` for this workflow.
+`./.lighthouserc.json`). See [Versioning](#versioning) above.
 
 ## File naming conventions
 

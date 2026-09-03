@@ -1,0 +1,85 @@
+# Reusable weekly health probe for a deployed backend. A rare drift check -- not a chatty
+# uptime monitor -- so it won't wake a scale-to-zero Cloud Run revision more than the caller's
+# own schedule allows. Callers own their own `on:` block (workflow_call can't define
+# triggers) and pass the base URL via a plain repository *variable*, not a secret: the URL
+# of a service deployed with --allow-unauthenticated is already public (and typically already
+# embedded in a shipped frontend bundle), so there's no real confidentiality to protect, and
+# `vars.*` -- unlike `secrets.*` -- can be referenced directly in a workflow_call job's
+# `with:` block.
+name: Health probe
+
+on:
+  workflow_call:
+    inputs:
+      url:
+        description: "Base URL of the deployed service (no trailing slash needed)"
+        required: true
+        type: string
+      paths:
+        description: 'JSON array of paths to probe, e.g. ["/health", "/ready"]'
+        required: true
+        type: string
+      retries:
+        description: "Attempts per path before failing"
+        required: false
+        type: number
+        default: 5
+      retry-delay-seconds:
+        description: "Seconds to wait between retries"
+        required: false
+        type: number
+        default: 5
+      timeout-seconds:
+        description: "Per-request curl timeout"
+        required: false
+        type: number
+        default: 15
+
+jobs:
+  probe:
+    if: ${{ github.event.repository.fork == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe
+        env:
+          BASE_URL: ${{ inputs.url }}
+          PATHS_JSON: ${{ inputs.paths }}
+          RETRIES: ${{ inputs.retries }}
+          RETRY_DELAY: ${{ inputs.retry-delay-seconds }}
+          CURL_TIMEOUT: ${{ inputs.timeout-seconds }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::url input is empty -- set the repository variable it reads from"
+            exit 1
+          fi
+          BASE_URL="${BASE_URL%/}"
+
+          {
+            echo "## Weekly probe smoke"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| **API** | ${BASE_URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "$PATHS_JSON" | jq -r '.[]' | while read -r path; do
+            echo "Checking ${BASE_URL}${path}…"
+            ok=0
+            for i in $(seq 1 "$RETRIES"); do
+              code=$(curl -sS -o /tmp/probe-body -w '%{http_code}' --max-time "$CURL_TIMEOUT" "${BASE_URL}${path}" || true)
+              body=$(tr -d '\r' </tmp/probe-body 2>/dev/null || true)
+              if [ "$code" = "200" ]; then
+                echo "OK ${path} (attempt ${i}): ${body}"
+                ok=1
+                break
+              fi
+              echo "attempt ${i}: HTTP ${code} body=${body}"
+              sleep "$RETRY_DELAY"
+            done
+            if [ "$ok" != "1" ]; then
+              echo "::error::Probe ${path} did not return HTTP 200 after ${RETRIES} attempts"
+              exit 1
+            fi
+            echo "| **probe** | \`GET ${path}\` → 200 |" >> "$GITHUB_STEP_SUMMARY"
+          done

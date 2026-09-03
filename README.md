@@ -37,9 +37,12 @@ consumer that hasn't opted in yet.
 Build + deploy to GitHub Pages, parameterized since the build command, output path, and
 whether client-side routing needs the `404.html` SPA-fallback trick genuinely differ per
 app. No cross-job artifact download — build and deploy happen in the same workflow run, so
-there's no artifact-poisoning risk class to defend against.
+there's no artifact-poisoning risk class to defend against. Name the caller file
+`deploy-pages.yml` in the consuming repo — see [File naming conventions](#file-naming-conventions).
 
-Call it from a consuming repo (gate it on your own CI job passing first):
+Call it from a consuming repo's `deploy-pages.yml` (a separate file from your verify
+workflow — it has a different trigger, push-to-`main` only, and a different risk profile,
+since it has side effects):
 
 ```yaml
 name: CI
@@ -106,55 +109,79 @@ slots. If your build needs no secrets at all, `secrets: inherit` (as in the exam
 is simpler and still correct — the generic slots just stay empty. Pin to `@v3` for this
 pattern (`@v2` predates the generic secret slots).
 
-### `npm-quality-gate.yml`
+### `npm-verify.yml`
 
-The npm CI command set (`npm ci`, `format:check`, `lint`, a test command with coverage,
-`build`) turned out to be identical across every npm-based consuming repo before this was
-built — confirmed against each repo's actual `package.json`, not assumed. Always names its
-job `quality`, so every adopting repo's required check has the same name.
+Each verification concern (format, doc-drift checks, lint, audit, typecheck, test, build,
+one-off extra checks) is its own parallel job, matrixed over `packages` — so a repo with
+more than one npm package (e.g. a root app plus a separate `service/`) gets one check per
+package per concern, instead of one blob job. Path-filtering (skip a job's real work on PRs
+that don't touch its paths) happens with a step-level `if` inside each job, not a job-level
+one — a job skipped entirely via job-level `if` never posts a check run, which would leave a
+required check pending forever on a PR that never trips it.
 
 ```yaml
-name: CI
+name: verify
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
-  quality:
+  verify:
     permissions:
       contents: read
       pull-requests: write
       checks: write # the Cobertura PR-comment step creates a check run, not just a comment
-    uses: danibsheehan/dani-actions/.github/workflows/npm-quality-gate.yml@v6
+    uses: danibsheehan/dani-actions/.github/workflows/npm-verify.yml@v7
     with:
-      stack-docs-command: python3 .github/scripts/check_stack_docs.py # omit if you don't have one
+      packages: |
+        [{"name": "app", "path": ".", "test-command": "npm run test:coverage",
+          "build-command": "npm run build", "coverage-file": "coverage/cobertura-coverage.xml"}]
+      doc-check-commands: |
+        [{"name": "stack-docs", "command": "python3 .github/scripts/check_stack_docs.py"}]
 ```
 
-That's the whole thing for a repo with no special needs. Other inputs, all optional:
+**`packages`** (required) — a JSON array of package objects:
 
-- `test-command` / `build-command` — override if your app's scripts differ (e.g. Angular's
-  `npm run test:ci`), or need env vars baked in (`build-command: "VITE_API_BASE=... npm run build"`).
-- `run-audit` (default `true`), `skip-covered` (default `true`), `coverage-file` (default
-  `coverage/cobertura-coverage.xml`), `coverage-thresholds` (default `"50 75"`).
-- `app-paths` — a full `dorny/paths-filter` `filters:` block (including the `app:` key) to
-  skip lint/audit/test/build on PRs that touch none of those paths. `format:check` and
-  `npm ci` always run regardless — cheap enough that skipping them isn't worth the added
-  complexity.
-- `setup-chrome` (default `false`) — set `true` if your test runner needs a real browser
-  (e.g. Angular's).
-- Needs a secret baked into `test-command`/`build-command`? Same generic
-  `build-secret-1/2/3` pass-through as `deploy-github-pages.yml`, for the same reason
-  (`secrets` can't be referenced inside `with:`).
+| field | required | default | meaning |
+|---|---|---|---|
+| `name` | yes | — | shown in the check name, e.g. `lint (app)` |
+| `path` | yes | — | working directory for this package |
+| `test-command` | yes | — | e.g. `npm run test:coverage` |
+| `build-command` | yes | — | e.g. `npm run build` |
+| `paths` | no | `""` (never filtered) | a full `dorny/paths-filter` block *including* the `app:` key, e.g. `"app:\n  - 'src/**'"` |
+| `audit` | no | `true` | set `false` to skip the `audit` job for this package |
+| `typecheck-command` | no | `""` (no typecheck job) | e.g. `npm run typecheck` — omit when type-checking is already inseparable from `build` (Angular's AOT/Ivy template checking has no standalone equivalent) |
+| `coverage-file` | no | `""` (no coverage steps) | relative to `path` |
+| `setup-chrome` | no | `false` | installs a real Chrome before `test-command` (e.g. Angular's test runner) |
 
-Pin to `@v6` for this workflow (`@v4`/`@v5` are missing `checks: write` in the job's own
-`permissions:` — the 5monkeys/cobertura-action PR-comment step needs it to create a check
-run and fails with "Resource not accessible by integration" without it; the calling job's
-`permissions:` block needs the same grant, since it bounds what the called job can request).
+Other inputs, all optional: `node-version-file` (default `.nvmrc`), `doc-check-commands`
+(JSON array of `{name, command}`, always run at repo root, never path-filtered — for
+cross-cutting drift checks), `extra-checks` (JSON array of `{name, command, path, paths}`,
+path-filtered like a package — for one-off verification that isn't lint/format/test/build,
+e.g. an OpenAPI contract check), `coverage-thresholds` (default `"50 75"`), `skip-covered`
+(default `true`). Needs a secret baked into a `test-command`/`build-command`? Same generic
+`build-secret-1/2/3` pass-through as `deploy-github-pages.yml` (`secrets` can't be referenced
+inside `with:`).
 
-**Note on the required-check name:** calling a reusable workflow from a job renders the
-check as `<your job id> / <called job's job id>` — since this workflow's inner job is also
-named `quality`, a caller job also named `quality` produces a required check literally named
-`quality / quality`, not bare `quality`. Set your branch ruleset's required check to match
-whatever actually shows up on a real PR, not the bare name.
+Pin to `@v7` for this workflow (`npm-quality-gate.yml`, the single-job predecessor to this
+workflow, is removed as of `@v7` — repos still pinned to `@v4`/`@v5`/`@v6` are unaffected,
+since tags are immutable, but there's no reason to pin a new consumer to it).
+
+## File naming conventions
+
+Every consuming repo should name its workflow files by what they do, not by a generic
+umbrella term — `ci.yml`/`test.yml` doesn't say whether it lints, tests, deploys, or all
+three. Same target/purpose = same filename across every repo that has it:
+
+- **`verify.yml`** — the parallel PR/push verification jobs (calls `npm-verify.yml`)
+- **`deploy-pages.yml`** — GitHub Pages deploys (calls `deploy-github-pages.yml`)
+- **`deploy-cloud-run.yml`** — Cloud Run deploys (repo-specific, no shared workflow yet)
+- **`dependabot-auto-merge.yml`**, **`codeql.yml`**, **`pr-labels.yml`**, **`pr-guide.yml`** —
+  already-standardized single-purpose workflows
+
+A repo with two deploy targets (e.g. a Pages-hosted app plus a Cloud-Run-hosted service)
+gets both `deploy-pages.yml` and `deploy-cloud-run.yml` as separate files — never a single
+`deploy.yml` covering both, since "what does this deploy, and where" should be answerable
+from the filename alone.

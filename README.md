@@ -240,6 +240,42 @@ jobs:
 
 Optional input: `fail-on-severity` (default `"high"`). Pin to `@v8` for this workflow.
 
+### `pr-guide.yml`
+
+Scaffolds an empty/default PR description, posts a sticky checklist comment, and applies
+path-based area labels. Generalizes only the *orchestration* (checkout pinned to the base
+commit, diff collection, comment posting, labeling) — the area taxonomy itself (what counts
+as "editor" vs "sync", which verify commands and reviewer-focus notes apply to each) is
+genuinely repo-specific and stays local: every consuming repo owns its own
+`.github/scripts/generate_pr_guide.py` + `.github/scripts/pr_guide_lib.py` (and
+`generate_pr_body.py`, which is close to identical everywhere but still repo-owned since
+it's checked out at the trusted base commit, not fetched from here).
+
+```yaml
+name: PR guide
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  guide:
+    uses: danibsheehan/dani-actions/.github/workflows/pr-guide.yml@v9
+    with:
+      labels: |
+        [{"name": "area: app", "color": "c2e0c6", "description": "App shell, layout, or routing"}]
+```
+
+`labels` is optional (default `"[]"`) — `actions/labeler` auto-creates missing labels on its
+own given `issues: write`, just without curated colors/descriptions, so only pass this if
+you want those. Pin to `@v9` for this workflow.
+
+**Note on trigger choice:** use `pull_request_target` with `synchronize` included, not plain
+`pull_request` — the guide/labels then stay current as the PR evolves rather than freezing
+at open-time, and pinning checkout to `pull_request.base.sha` already fully avoids running
+PR-authored code, so there's no additional safety a same-repo-only plain `pull_request`
+trigger would buy over this.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic
@@ -252,8 +288,9 @@ three. Same target/purpose = same filename across every repo that has it:
 - **`codeql.yml`** — CodeQL scanning (calls `codeql-js.yml` for JS/TS-only repos; bespoke
   for multi-language repos)
 - **`dependency-review.yml`** — calls the reusable workflow of the same name
-- **`dependabot-auto-merge.yml`**, **`pr-labels.yml`**, **`pr-guide.yml`** —
-  already-standardized single-purpose workflows
+- **`pr-guide.yml`** — calls the reusable workflow of the same name
+- **`dependabot-auto-merge.yml`**, **`pr-labels.yml`** — already-standardized
+  single-purpose workflows
 
 A repo with two deploy targets (e.g. a Pages-hosted app plus a Cloud-Run-hosted service)
 gets both `deploy-pages.yml` and `deploy-cloud-run.yml` as separate files — never a single

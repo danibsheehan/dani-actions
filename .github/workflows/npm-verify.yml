@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -197,7 +197,7 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -275,7 +275,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -305,7 +305,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: ./.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@feat/npm-verify-redesign
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.check.path || '.' }}

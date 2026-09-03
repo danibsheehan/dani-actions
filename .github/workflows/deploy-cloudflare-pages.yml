@@ -37,6 +37,14 @@ on:
         required: false
         type: string
         default: ""
+      production-keep-count:
+        description: >-
+          Most-recent production deployments to keep. Cloudflare Pages never expires a
+          deployment's own hash URL on its own, so without this, every past production build
+          (broken ones included) stays reachable forever.
+        required: false
+        type: number
+        default: 5
     secrets:
       cloudflare-api-token:
         required: true
@@ -135,6 +143,96 @@ jobs:
               echo "::warning::site-public-url ${SITE}/ returned HTTP ${site_code} (often Cloudflare bot challenge). Upload smoke used ${URL}/ instead."
             fi
           fi
+
+      # Cloudflare never expires a deployment's own hash URL on its own -- every past
+      # production build stays reachable forever unless explicitly deleted. Runs only after
+      # the smoke check above confirms the NEW deploy is good, so a prune never touches
+      # anything before the replacement is verified live. Deliberately non-fatal (::warning::
+      # not exit 1): unlike pages-preview-cleanup.yml (whose only job is cleanup), this is a
+      # secondary concern bolted onto a deploy job whose primary purpose already succeeded --
+      # a Cloudflare API hiccup here shouldn't mark an otherwise-good deploy as failed.
+      - name: Prune old production deployments
+        env:
+          CF_TOKEN: ${{ secrets.cloudflare-api-token }}
+          CF_ACCOUNT: ${{ secrets.cloudflare-account-id }}
+          CF_PROJECT: ${{ inputs.project-name }}
+          KEEP_COUNT: ${{ inputs.production-keep-count }}
+        run: |
+          list_production_deployments() {
+            local page=1 total_pages resp
+            local -a lines=() page_lines=()
+            while true; do
+              if ! resp=$(curl -sS -f \
+                -H "Authorization: Bearer $CF_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/pages/projects/${CF_PROJECT}/deployments?env=production&page=${page}&per_page=25"); then
+                echo "::warning::Failed to list Cloudflare Pages production deployments (page $page); skipping prune this run."
+                return 1
+              fi
+              mapfile -t page_lines < <(echo "$resp" | jq -r '
+                .result[]
+                | select(.environment == "production")
+                | "\(.created_on)\t\(.id)\t\(.url)"
+              ')
+              if [ "${#page_lines[@]}" -gt 0 ]; then
+                lines+=("${page_lines[@]}")
+              fi
+              total_pages=$(echo "$resp" | jq -r '.result_info.total_pages // 1')
+              if [ "$page" -ge "$total_pages" ]; then
+                break
+              fi
+              page=$((page + 1))
+            done
+            if [ "${#lines[@]}" -gt 0 ]; then
+              printf '%s\n' "${lines[@]}"
+            fi
+          }
+
+          if ! raw=$(list_production_deployments); then
+            exit 0
+          fi
+          all_lines=()
+          if [ -n "$raw" ]; then
+            mapfile -t all_lines <<< "$raw"
+          fi
+
+          # created_on is ISO 8601, so lexicographic sort is also chronological.
+          mapfile -t sorted_lines < <(printf '%s\n' "${all_lines[@]}" | sort -r)
+          to_delete=("${sorted_lines[@]:$KEEP_COUNT}")
+
+          if [ "${#to_delete[@]}" -eq 0 ]; then
+            echo "Nothing to prune (${#sorted_lines[@]} production deployment(s), keeping ${KEEP_COUNT})."
+            exit 0
+          fi
+
+          echo "Pruning ${#to_delete[@]} production deployment(s) beyond the ${KEEP_COUNT} most recent…"
+          declare -A deleted_urls=()
+          for line in "${to_delete[@]}"; do
+            id=$(echo "$line" | cut -f2)
+            url=$(echo "$line" | cut -f3)
+            deleted_urls["$url"]=1
+            echo "Deleting $id ($url)"
+            curl -sS -X DELETE \
+              -H "Authorization: Bearer $CF_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/pages/projects/${CF_PROJECT}/deployments/${id}?force=true" \
+              >/dev/null || echo "::warning::Delete request for $id failed; will re-check by URL."
+          done
+
+          for attempt in 1 2 3; do
+            still_live=()
+            for url in "${!deleted_urls[@]}"; do
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$url" || echo "000")
+              if [ "$code" = "200" ]; then
+                still_live+=("$url")
+              fi
+            done
+            if [ "${#still_live[@]}" -eq 0 ]; then
+              echo "Confirmed all pruned URLs are gone."
+              exit 0
+            fi
+            echo "${#still_live[@]} pruned URL(s) still responding after attempt ${attempt}: ${still_live[*]}"
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+          echo "::warning::${#still_live[@]} pruned URL(s) still responding after retries: ${still_live[*]} (Cloudflare's own bookkeeping can lag; not failing the deploy for this)"
 
       - name: Deploy summary
         env:

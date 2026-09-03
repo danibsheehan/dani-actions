@@ -11,11 +11,11 @@ name: npm quality gate
 on:
   workflow_call:
     inputs:
-      node-version:
-        description: "Node version to set up"
+      node-version-file:
+        description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
         required: false
         type: string
-        default: "22"
+        default: ".nvmrc"
       test-command:
         description: "Shell command that runs the test suite with coverage"
         required: false
@@ -99,7 +99,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ inputs.node-version }}
+          node-version-file: ${{ inputs.node-version-file }}
           cache: npm
 
       - name: Set up Chrome

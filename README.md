@@ -332,6 +332,40 @@ thresholds:
 Optional inputs: `node-version-file` (default `.nvmrc`), `lighthouserc-path` (default
 `./.lighthouserc.json`). See [Versioning](#versioning) above.
 
+### `health-probe.yml`
+
+A rare drift check for a deployed backend — not a chatty uptime monitor, so it won't wake a
+scale-to-zero Cloud Run revision more than the caller's own schedule allows.
+
+```yaml
+name: Weekly probe smoke
+
+on:
+  schedule:
+    - cron: "17 13 * * 1" # offset each caller's minute to avoid a shared-cron stampede
+  workflow_dispatch:
+
+jobs:
+  probe:
+    uses: danibsheehan/dani-actions/.github/workflows/health-probe.yml@v11
+    with:
+      url: ${{ vars.API_PUBLIC_URL }}
+      paths: '["/health", "/ready"]'
+```
+
+**Pass the base URL via a repository *variable*, not a secret.** A service deployed with
+`--allow-unauthenticated` is already public — often already embedded in a shipped frontend
+bundle — so there's no real confidentiality to protect, and unlike `secrets.*`, `vars.*` can
+be referenced directly in a `workflow_call` job's `with:` block, no generic secret-passthrough
+slot needed. If an existing caller currently stores this URL as a secret, reclassify it: set
+a same-named repository variable with the actual value (you'll need to already know or look
+up the value — GitHub secrets are write-only, there's no way to read one back to copy it into
+the new variable) and switch every reference from `secrets.X` to `vars.X`, including any
+build step that bakes the same URL into a frontend bundle.
+
+Optional inputs: `retries` (default `5`), `retry-delay-seconds` (default `5`),
+`timeout-seconds` (default `15`). See [Versioning](#versioning) above.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic
@@ -345,6 +379,9 @@ three. Same target/purpose = same filename across every repo that has it:
   for multi-language repos)
 - **`dependency-review.yml`** — calls the reusable workflow of the same name
 - **`pr-guide.yml`** — calls the reusable workflow of the same name
+- **`lighthouse.yml`** — calls `lighthouse-ci.yml`
+- **`weekly-probe-smoke.yml`** — calls `health-probe.yml` (only relevant to a repo with a
+  deployed backend of its own to probe)
 - **`dependabot-auto-merge.yml`**, **`pr-labels.yml`** — already-standardized
   single-purpose workflows
 

@@ -16,11 +16,11 @@ on:
         description: "Path to the built output to publish (e.g. 'dist')"
         required: true
         type: string
-      node-version:
-        description: "Node version to set up"
+      node-version-file:
+        description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
         required: false
         type: string
-        default: "22"
+        default: ".nvmrc"
       spa-fallback:
         description: "Copy index.html to 404.html so client-side routes survive a hard refresh/deep link on GitHub Pages"
         required: false
@@ -58,7 +58,7 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ inputs.node-version }}
+          node-version-file: ${{ inputs.node-version-file }}
           cache: npm
 
       - run: npm ci

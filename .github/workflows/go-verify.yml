@@ -1,0 +1,191 @@
+# Reusable Go verification gate for a single Go module, mirroring npm-verify.yml's job split
+# (lint / vet+test+build as separate parallel jobs, each its own required check) but NOT
+# matrixed over multiple modules -- there's exactly one real caller (caught-looking's
+# backend/) to design against today, so a `packages`-array schema would be speculative.
+# Coverage enforcement runs as its own unconditional step (check-cobertura-threshold),
+# independent of the PR-comment step, so it fires on every push and PR -- unlike
+# 5monkeys/cobertura-action's own threshold, which only runs inside its comment step (needs
+# a write token, so it's gated to same-repo pull_request events and never runs on push).
+name: Go verify
+
+on:
+  workflow_call:
+    inputs:
+      go-version-file:
+        description: "Path to a go.mod/go.work file to read the version from"
+        required: false
+        type: string
+        default: "go.mod"
+      working-directory:
+        description: "Directory the Go module lives in (e.g. 'backend')"
+        required: true
+        type: string
+      paths:
+        description: >-
+          Optional dorny/paths-filter block INCLUDING the "app:" key, e.g.
+          "app:\n  - 'backend/**'". Omit/empty to never path-filter these jobs.
+        required: false
+        type: string
+        default: ""
+      race:
+        description: "Run tests with the race detector"
+        required: false
+        type: boolean
+        default: true
+      govulncheck-version:
+        description: "Pinned govulncheck version"
+        required: false
+        type: string
+        default: "v1.7.0"
+      coverage-threshold:
+        description: "Minimum line-rate in [0, 1], enforced on every push and PR"
+        required: false
+        type: string
+        default: "0.50"
+      coverage-label:
+        description: "Label used in coverage threshold success/failure messages"
+        required: false
+        type: string
+        default: "Coverage"
+      coverage-thresholds:
+        description: "Space-separated 'yellow red' thresholds for the coverage summary badge"
+        required: false
+        type: string
+        default: "50 75"
+      skip-covered:
+        description: "Hide 100%-covered files from the Cobertura PR comment table"
+        required: false
+        type: boolean
+        default: true
+      report-name:
+        description: "Report name shown on the Cobertura PR comment"
+        required: false
+        type: string
+        default: "backend"
+
+jobs:
+  lint:
+    name: lint (golangci-lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v12
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Detect relevant changes
+        if: inputs.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ inputs.paths }}
+
+      - if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run ./...
+
+  test-build:
+    name: vet, test+coverage, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v12
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Detect relevant changes
+        if: inputs.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ inputs.paths }}
+
+      - if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go mod download
+
+      - if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go vet ./...
+
+      - name: Vulnerability scan
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go run golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }} ./...
+
+      - name: Test with race detector
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go test ./... ${{ inputs.race && '-race' || '' }} -count=1
+
+      - name: Test with coverage
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: |
+          go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
+          go install github.com/boumenot/gocover-cobertura@v1.4.0
+          "$(go env GOPATH)/bin/gocover-cobertura" < coverage.out > gha-cobertura-raw.xml
+
+      - name: Merge Cobertura entries by file
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        uses: danibsheehan/dani-actions/.github/actions/merge-cobertura-by-file@v12
+        with:
+          input-path: ${{ inputs.working-directory }}/gha-cobertura-raw.xml
+          output-path: ${{ inputs.working-directory }}/gha-cobertura.xml
+
+      - name: Enforce coverage threshold
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        uses: danibsheehan/dani-actions/.github/actions/check-cobertura-threshold@v12
+        with:
+          path: ${{ inputs.working-directory }}/gha-cobertura.xml
+          minimum: ${{ inputs.coverage-threshold }}
+          label: ${{ inputs.coverage-label }}
+
+      - name: Cobertura markdown summary (for job summary)
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0
+        with:
+          filename: ${{ inputs.working-directory }}/gha-cobertura.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: file
+          thresholds: ${{ inputs.coverage-thresholds }}
+
+      - name: Add coverage to GitHub Actions job summary
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: |
+          echo "## Code coverage: ${{ inputs.report-name }} (Cobertura)" >> "$GITHUB_STEP_SUMMARY"
+          cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
+        working-directory: ${{ github.workspace }}
+
+      # Same-repo PRs only: forked PR workflows get a read-only token and cannot post
+      # comments on the base repo PR. Informational only (fail_below_threshold: false) --
+      # enforcement is the standalone "Enforce coverage threshold" step above, which runs on
+      # every push and PR.
+      - name: Cobertura coverage comment on PR
+        if: >
+          (inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true') &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          path: ${{ inputs.working-directory }}/gha-cobertura.xml
+          minimum_coverage: 0
+          fail_below_threshold: false
+          show_line: true
+          show_branch: true
+          skip_covered: ${{ inputs.skip-covered }}
+          report_name: ${{ inputs.report-name }}
+
+      - if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: go build -o /dev/null .

@@ -276,6 +276,56 @@ at open-time, and pinning checkout to `pull_request.base.sha` already fully avoi
 PR-authored code, so there's no additional safety a same-repo-only plain `pull_request`
 trigger would buy over this.
 
+### `lighthouse-ci.yml`
+
+Audits a local production build with Lighthouse CI and posts a sticky PR comment with report
+links. This is the right approach for a GitHub-Pages-only repo with no PR-preview
+infrastructure — it audits the build directly rather than a live URL. A repo with real
+PR-preview infra (e.g. Cloudflare Pages branch previews) should audit that live URL instead,
+since it reflects real network/CDN conditions a local static-dir audit can't; that's a
+different, bespoke setup this workflow doesn't try to cover.
+
+```yaml
+name: Lighthouse CI
+
+on: pull_request
+
+jobs:
+  lighthouse:
+    if: github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: danibsheehan/dani-actions/.github/workflows/lighthouse-ci.yml@v10
+    with:
+      build-command: npm run build
+```
+
+Requires a `.lighthouserc.json` at the repo root with `collect.staticDistDir` pointing at
+the build output — **`treosh/lighthouse-ci-action` has no such input of its own**, this
+setting only exists in the config file. Recommended baseline, informational (warn-level)
+thresholds:
+
+```json
+{
+  "ci": {
+    "collect": { "staticDistDir": "./dist", "numberOfRuns": 1 },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["warn", { "minScore": 0.8 }],
+        "categories:accessibility": ["warn", { "minScore": 0.9 }],
+        "categories:best-practices": ["warn", { "minScore": 0.9 }],
+        "categories:seo": ["warn", { "minScore": 0.9 }]
+      }
+    },
+    "upload": { "target": "temporary-public-storage" }
+  }
+}
+```
+
+Optional inputs: `node-version-file` (default `.nvmrc`), `lighthouserc-path` (default
+`./.lighthouserc.json`). Pin to `@v10` for this workflow.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic

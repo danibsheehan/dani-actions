@@ -1,0 +1,77 @@
+# Reusable Lighthouse CI check against a local static build. This is the right approach for
+# a GitHub-Pages-only repo with no PR-preview infrastructure -- it audits the production
+# build directly rather than a live URL. A repo with real PR-preview infra (e.g.
+# Cloudflare Pages branch previews) should audit that live URL instead, since it reflects
+# real network/CDN conditions a local static-dir audit can't -- that's a different, bespoke
+# setup, not something this workflow tries to cover.
+name: Lighthouse CI
+
+on:
+  workflow_call:
+    inputs:
+      node-version-file:
+        description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
+        required: false
+        type: string
+        default: ".nvmrc"
+      build-command:
+        description: "Shell command that produces the production build"
+        required: true
+        type: string
+      lighthouserc-path:
+        description: >-
+          Path to the Lighthouse CI config. treosh/lighthouse-ci-action has no
+          "static dist dir" input of its own -- the build output path to audit is set via
+          this config file's own `collect.staticDistDir`, not an action input.
+        required: false
+        type: string
+        default: "./.lighthouserc.json"
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: ${{ inputs.build-command }}
+
+      - name: Run Lighthouse CI
+        id: lighthouse
+        uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # v12
+        with:
+          configPath: ${{ inputs.lighthouserc-path }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: Format report links as markdown
+        id: report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const links = JSON.parse('${{ steps.lighthouse.outputs.links }}' || '{}');
+            const rows = Object.entries(links).map(([url, report]) => `- [${url}](${report})`);
+            core.setOutput('markdown', rows.length ? rows.join('\n') : 'No report links returned -- see job logs.');
+
+      # Sticky so each push updates one comment instead of spamming the PR.
+      - name: Comment PR with report links
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v2 branch
+        with:
+          header: lighthouse
+          message: |
+            ### Lighthouse CI report
+
+            ${{ steps.report.outputs.markdown }}
+
+            Thresholds are informational (warn-level) for now; see `${{ inputs.lighthouserc-path }}`.

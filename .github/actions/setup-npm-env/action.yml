@@ -1,0 +1,30 @@
+name: Set up npm environment
+description: >-
+  Checkout + Node (via a version file) + npm ci, scoped to one working directory. Shared by
+  every job in npm-verify.yml so parallelizing those jobs doesn't mean re-copying this
+  boilerplate into each one.
+
+inputs:
+  node-version-file:
+    description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
+    required: false
+    default: ".nvmrc"
+  working-directory:
+    description: "Directory to run npm ci in (e.g. 'service' for a second package)"
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: ${{ inputs.node-version-file }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+    - run: npm ci
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}

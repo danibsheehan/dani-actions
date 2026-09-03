@@ -1,0 +1,322 @@
+# Reusable npm verification gate. Each concern (format/doc-checks/lint/audit/typecheck/
+# test/build/extra checks) is its own parallel job, matrixed over `packages` so a repo with
+# more than one npm package (e.g. a root app + a separate service/) gets one check per
+# package per concern, instead of a single blob job. Path-filtering happens *inside* each
+# job (step-level `if`, not a job-level one) so a job whose package didn't change still
+# reports a passing check -- a job skipped entirely via job-level `if` never posts a check
+# run at all, which leaves a required check pending forever on PRs that don't touch it.
+name: npm verify
+
+on:
+  workflow_call:
+    inputs:
+      node-version-file:
+        description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
+        required: false
+        type: string
+        default: ".nvmrc"
+      packages:
+        description: >-
+          JSON array of package objects: { name, path, paths (optional -- a full
+          dorny/paths-filter block INCLUDING the "app:" key, e.g. "app:\n  - 'src/**'";
+          omit/empty to never filter this package's jobs), audit (bool, default true),
+          typecheck-command (default "", skips the typecheck job for this package),
+          test-command, build-command, coverage-file (default "", skips coverage
+          summary/comment for this package), setup-chrome (bool, default false) }.
+        required: true
+        type: string
+      doc-check-commands:
+        description: >-
+          JSON array of { name, command }, run at repo root, always (never path-filtered) --
+          for cross-cutting drift checks like README/package.json version consistency.
+        required: false
+        type: string
+        default: "[]"
+      extra-checks:
+        description: >-
+          JSON array of { name, command, path (working directory, default "."), paths
+          (optional path-filter block, same shape as a package's) } -- for one-off
+          verification that doesn't fit lint/format/test/build (e.g. an OpenAPI contract
+          check).
+        required: false
+        type: string
+        default: "[]"
+      coverage-thresholds:
+        description: "Space-separated 'yellow red' thresholds for the coverage summary badge"
+        required: false
+        type: string
+        default: "50 75"
+      skip-covered:
+        description: "Hide 100%-covered files from the Cobertura PR comment table"
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      build-secret-1:
+        required: false
+      build-secret-2:
+        required: false
+      build-secret-3:
+        required: false
+
+jobs:
+  # Narrows `packages` down to the subsets that actually need a typecheck/audit job, so a
+  # package that opts out doesn't get a permanently-trivial "typecheck (x)" required check --
+  # it gets none at all. lint/format/test/build/checks don't need this: every package always
+  # wants those, and doc-checks/extra-checks aren't package-scoped in the same way.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      typecheck-packages: ${{ steps.compute.outputs.typecheck-packages }}
+      audit-packages: ${{ steps.compute.outputs.audit-packages }}
+    steps:
+      - id: compute
+        run: |
+          echo "typecheck-packages=$(jq -c '[.[] | select((.["typecheck-command"] // "") != "")]' <<<'${{ inputs.packages }}')" >> "$GITHUB_OUTPUT"
+          echo "audit-packages=$(jq -c '[.[] | select(.audit != false)]' <<<'${{ inputs.packages }}')" >> "$GITHUB_OUTPUT"
+
+  format:
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(inputs.packages) }}
+    name: format (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+      - run: npm run format:check
+        working-directory: ${{ matrix.package.path }}
+
+  doc-checks:
+    if: inputs.doc-check-commands != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJson(inputs.doc-check-commands) }}
+    name: doc-checks (${{ matrix.check.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ${{ matrix.check.command }}
+
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(inputs.packages) }}
+    name: lint (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+
+      - name: Detect relevant changes
+        if: matrix.package.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.package.paths }}
+
+      - if: matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: npm run lint
+        working-directory: ${{ matrix.package.path }}
+
+  audit:
+    needs: plan
+    if: needs.plan.outputs.audit-packages != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.plan.outputs.audit-packages) }}
+    name: audit (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+
+      - name: Detect relevant changes
+        if: matrix.package.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.package.paths }}
+
+      - if: matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: npm audit --audit-level=high
+        working-directory: ${{ matrix.package.path }}
+
+  typecheck:
+    needs: plan
+    if: needs.plan.outputs.typecheck-packages != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.plan.outputs.typecheck-packages) }}
+    name: typecheck (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+
+      - name: Detect relevant changes
+        if: matrix.package.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.package.paths }}
+
+      - if: matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: ${{ matrix.package.typecheck-command }}
+        working-directory: ${{ matrix.package.path }}
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(inputs.packages) }}
+    name: test (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+
+      - name: Detect relevant changes
+        if: matrix.package.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.package.paths }}
+
+      - name: Set up Chrome
+        if: matrix.package.setup-chrome && (matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true')
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2
+        id: setup-chrome
+
+      - name: Test
+        if: matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+          BUILD_SECRET_1: ${{ secrets.build-secret-1 }}
+          BUILD_SECRET_2: ${{ secrets.build-secret-2 }}
+          BUILD_SECRET_3: ${{ secrets.build-secret-3 }}
+        run: ${{ matrix.package.test-command }}
+        working-directory: ${{ matrix.package.path }}
+
+      - name: Cobertura markdown summary (for job summary)
+        if: >
+          matrix.package.coverage-file != '' &&
+          (matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true')
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0
+        with:
+          filename: ${{ matrix.package.path }}/${{ matrix.package.coverage-file }}
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: file
+          thresholds: ${{ inputs.coverage-thresholds }}
+
+      - name: Add coverage to GitHub Actions job summary
+        if: >
+          matrix.package.coverage-file != '' &&
+          (matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true')
+        run: |
+          echo "## Code coverage: ${{ matrix.package.name }} (Cobertura)" >> "$GITHUB_STEP_SUMMARY"
+          cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Same-repo PRs only: forked PR workflows get a read-only token and cannot post
+      # comments on the base repo PR.
+      - name: Cobertura coverage comment on PR
+        if: >
+          matrix.package.coverage-file != '' &&
+          (matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true') &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          path: ${{ matrix.package.path }}/${{ matrix.package.coverage-file }}
+          minimum_coverage: 0
+          fail_below_threshold: false
+          show_line: true
+          show_branch: true
+          skip_covered: ${{ inputs.skip-covered }}
+          report_name: ${{ matrix.package.name }}
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(inputs.packages) }}
+    name: build (${{ matrix.package.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.package.path }}
+
+      - name: Detect relevant changes
+        if: matrix.package.paths != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.package.paths }}
+
+      - if: matrix.package.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        env:
+          BUILD_SECRET_1: ${{ secrets.build-secret-1 }}
+          BUILD_SECRET_2: ${{ secrets.build-secret-2 }}
+          BUILD_SECRET_3: ${{ secrets.build-secret-3 }}
+        run: ${{ matrix.package.build-command }}
+        working-directory: ${{ matrix.package.path }}
+
+  checks:
+    if: inputs.extra-checks != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJson(inputs.extra-checks) }}
+    name: checks (${{ matrix.check.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v7
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          working-directory: ${{ matrix.check.path || '.' }}
+
+      - name: Detect relevant changes
+        if: (matrix.check.paths || '') != '' && github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ matrix.check.paths }}
+
+      - if: (matrix.check.paths || '') == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: ${{ matrix.check.command }}
+        working-directory: ${{ matrix.check.path || '.' }}

@@ -175,6 +175,64 @@ Pin to `@v7` for this workflow (`npm-quality-gate.yml`, the single-job predecess
 workflow, is removed as of `@v7` — repos still pinned to `@v4`/`@v5`/`@v6` are unaffected,
 since tags are immutable, but there's no reason to pin a new consumer to it).
 
+### `codeql-js.yml`
+
+CodeQL scanning for a repo with only JavaScript/TypeScript to analyze. A repo with more than
+one language to scan (Go, GitHub Actions itself, etc.) needs its own bespoke `codeql.yml`
+instead — see caught-looking's for the pattern (a `matrix` plus an explicit Go build step,
+since CodeQL's autobuild heuristic hangs when `go.mod` isn't at the repo root).
+
+```yaml
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 1' # weekly, Monday
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write
+    uses: danibsheehan/dani-actions/.github/workflows/codeql-js.yml@v8
+```
+
+Pin to `@v8` for this workflow.
+
+### `dependency-review.yml`
+
+Flags newly-introduced vulnerable or license-incompatible dependencies in a PR's diff,
+before merge — complements Dependabot, which is retroactive/scheduled rather than PR-time.
+Works across every ecosystem GitHub's dependency graph covers (npm and Go both included),
+so it's identical across every consuming repo regardless of stack.
+
+```yaml
+name: Dependency review
+
+on:
+  pull_request:
+
+jobs:
+  dependency-review:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: danibsheehan/dani-actions/.github/workflows/dependency-review.yml@v8
+```
+
+Optional input: `fail-on-severity` (default `"high"`). Pin to `@v8` for this workflow.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic
@@ -184,7 +242,10 @@ three. Same target/purpose = same filename across every repo that has it:
 - **`verify.yml`** — the parallel PR/push verification jobs (calls `npm-verify.yml`)
 - **`deploy-pages.yml`** — GitHub Pages deploys (calls `deploy-github-pages.yml`)
 - **`deploy-cloud-run.yml`** — Cloud Run deploys (repo-specific, no shared workflow yet)
-- **`dependabot-auto-merge.yml`**, **`codeql.yml`**, **`pr-labels.yml`**, **`pr-guide.yml`** —
+- **`codeql.yml`** — CodeQL scanning (calls `codeql-js.yml` for JS/TS-only repos; bespoke
+  for multi-language repos)
+- **`dependency-review.yml`** — calls the reusable workflow of the same name
+- **`dependabot-auto-merge.yml`**, **`pr-labels.yml`**, **`pr-guide.yml`** —
   already-standardized single-purpose workflows
 
 A repo with two deploy targets (e.g. a Pages-hosted app plus a Cloud-Run-hosted service)

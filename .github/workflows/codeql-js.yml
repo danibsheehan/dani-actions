@@ -1,0 +1,29 @@
+# Reusable CodeQL scan for pure JavaScript/TypeScript repos. Callers own their own `on:`
+# block (push/pull_request/schedule) since workflow_call can't define triggers; this just
+# supplies the analyze job. Repos with more than one language to scan (Go, GitHub Actions
+# itself, etc.) stay on their own bespoke codeql.yml -- caught-looking's, for example, needs
+# a matrix and an explicit Go build step CodeQL's autobuild heuristic hangs on.
+name: CodeQL (JS/TS)
+
+on:
+  workflow_call:
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          category: /language:javascript-typescript

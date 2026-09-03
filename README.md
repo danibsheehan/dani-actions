@@ -182,6 +182,13 @@ one language to scan (Go, GitHub Actions itself, etc.) needs its own bespoke `co
 instead — see caught-looking's for the pattern (a `matrix` plus an explicit Go build step,
 since CodeQL's autobuild heuristic hangs when `go.mod` isn't at the repo root).
 
+**Before adding this to a repo for the first time**, check whether GitHub's *default*
+(automatic) CodeQL setup is already enabled — `gh api repos/<owner>/<repo>/code-scanning/default-setup
+--jq .state`. Default and advanced (workflow-based) setup cannot coexist: every SARIF upload
+from this workflow gets rejected with "CodeQL analyses from advanced configurations cannot
+be processed when the default setup is enabled" until default setup is disabled (`gh api -X
+PATCH repos/<owner>/<repo>/code-scanning/default-setup -f state=not-configured`).
+
 ```yaml
 name: CodeQL
 

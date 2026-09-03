@@ -501,6 +501,14 @@ generic-slot mechanism keeps both shared frontend-deploy workflows consistent. S
 [File naming conventions](#file-naming-conventions) below for how this interacts with a
 repo whose two deploy jobs have a real ordering dependency.
 
+**Old production deployments are pruned automatically** (`production-keep-count`, default
+`5`) — Cloudflare never expires a deployment's own hash URL on its own, so without this,
+every past production build (including a broken one a bad deploy shipped) stays reachable
+forever. Runs only after the smoke check confirms the new deploy is good, and is
+deliberately non-fatal (`::warning::`, not a failed step) if the Cloudflare API has a hiccup
+— unlike `pages-preview-cleanup.yml` (whose only job is cleanup), this is a secondary concern
+bolted onto a deploy job whose primary purpose already succeeded.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic

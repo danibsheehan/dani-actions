@@ -414,6 +414,93 @@ Other inputs: `go-version-file` (default `"go.mod"`), `race` (default `true`),
 `@latest` in the `lint` job, matching its prior bespoke behavior — not pinned as part of this
 extraction.
 
+### `deploy-cloud-run.yml`
+
+Explicit `docker build`/`docker push` to a named Artifact Registry repo, then
+`google-github-actions/deploy-cloudrun` (with `image:`, not `source:`) to deploy. Deliberately
+not `deploy-cloudrun`'s `source:` input, which hands the build off to a managed Cloud Build
+you don't control — the owned registry gives SHA-tagged images (an audit trail of exactly
+what's deployed), a retention/cleanup policy (`artifact-keep-count`), and inline build logs
+in the Actions run.
+
+```yaml
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      id-token: write
+    uses: danibsheehan/dani-actions/.github/workflows/deploy-cloud-run.yml@v13
+    with:
+      service-name: my-service
+      region: ${{ vars.GCP_REGION }}
+      project-id: ${{ vars.GCP_PROJECT_ID }}
+      artifact-repository: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      deploy-service-account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      source-path: backend
+      startup-probe-path: /health
+      smoke-check-paths: '["/health", "/ready"]'
+      env-vars-json: '{"SOME_CONFIG": "${{ vars.SOME_CONFIG }}"}'
+```
+
+**Auth is Workload Identity Federation only — no service-account key ever touches GitHub.**
+Each consuming GCP project needs its own WIF pool + provider bound to a deploy service
+account (`roles/iam.workloadIdentityUser`, scoped to that repo's `attribute.repository`) —
+this is real GCP IAM setup outside GitHub Actions, not something this workflow can do for
+you. `--allow-unauthenticated` is always applied: the real access boundary for services in
+this portfolio is app-level (a JWT, a signed request), not GCP IAM, since callers have no GCP
+identity to present.
+
+**Env vars go through `env-vars-json`, not `deploy-cloudrun`'s own `env_vars` input.** That
+input parses commas as entry separators between `KEY=VALUE` pairs, silently corrupting any
+value containing a comma (e.g. a comma-separated origins list) unless pre-escaped.
+`env-vars-json` is written to a file and passed via `--env-vars-file` instead, sidestepping
+the bug. Build it straight from `vars.*` — `secrets.*` can't go in a `with:` block anyway, and
+if a value isn't actually sensitive (most deploy-time config isn't — model names, numeric
+caps, a public URL, an allowed-origins list), it shouldn't be a secret in the first place.
+Real secrets belong in GCP Secret Manager, referenced by name (never value) via
+`gcp-secrets-json: {"CONTAINER_ENV_VAR": "SECRET_NAME:latest"}`.
+
+Other inputs: `dockerfile` (default `"Dockerfile"`, relative to `source-path`),
+`runtime-service-account` (empty uses the project default compute SA),
+`min-instances`/`max-instances` (default `0`/`2`), `artifact-keep-count` (default `5`),
+`extra-flags` (raw passthrough for anything not covered). Output: `url`.
+
+### `deploy-cloudflare-pages.yml`
+
+Build + deploy to Cloudflare Pages, symmetric to `deploy-github-pages.yml` — same shape
+(`build-command`/`dist-path`/`node-version-file`, generic `build-secret-1/2/3` passthrough,
+a `working-directory` input for a monorepo-style frontend), with the publish step and auth
+model swapped for Cloudflare's own (an API token + account ID, not GitHub's Pages OIDC).
+Kept as its own reusable workflow rather than merged into `deploy-github-pages.yml` behind a
+host switch — the two hosts need different actions and credential models entirely, so one
+file per host stays simpler than one file branching on which host.
+
+```yaml
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      deployments: write
+    uses: danibsheehan/dani-actions/.github/workflows/deploy-cloudflare-pages.yml@v13
+    with:
+      build-command: npm run build
+      dist-path: dist
+      working-directory: frontend
+      project-name: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+      site-public-url: ${{ vars.SITE_PUBLIC_URL }} # optional soft check, never fails
+    secrets:
+      cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      cloudflare-account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+```
+
+If a repo's frontend build needs a value from a sibling deploy job (e.g. a freshly-deployed
+backend's URL for `VITE_API_BASE`), map it onto `build-secret-1/2/3` the same way
+`deploy-github-pages.yml` does — even though it isn't actually secret, reusing the identical
+generic-slot mechanism keeps both shared frontend-deploy workflows consistent. See
+[File naming conventions](#file-naming-conventions) below for how this interacts with a
+repo whose two deploy jobs have a real ordering dependency.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic
@@ -422,7 +509,8 @@ three. Same target/purpose = same filename across every repo that has it:
 
 - **`verify.yml`** — the parallel PR/push verification jobs (calls `npm-verify.yml`)
 - **`deploy-pages.yml`** — GitHub Pages deploys (calls `deploy-github-pages.yml`)
-- **`deploy-cloud-run.yml`** — Cloud Run deploys (repo-specific, no shared workflow yet)
+- **`deploy-cloud-run.yml`** — Cloud Run deploys (calls `deploy-cloud-run.yml`)
+- **`deploy-cloudflare-pages.yml`** — Cloudflare Pages deploys (calls `deploy-cloudflare-pages.yml`)
 - **`codeql.yml`** — CodeQL scanning (calls `codeql-js.yml` for JS/TS-only repos; bespoke
   for multi-language repos)
 - **`dependency-review.yml`** — calls the reusable workflow of the same name
@@ -435,7 +523,17 @@ three. Same target/purpose = same filename across every repo that has it:
 - **`dependabot-auto-merge.yml`**, **`pr-labels.yml`** — already-standardized
   single-purpose workflows
 
-A repo with two deploy targets (e.g. a Pages-hosted app plus a Cloud-Run-hosted service)
-gets both `deploy-pages.yml` and `deploy-cloud-run.yml` as separate files — never a single
-`deploy.yml` covering both, since "what does this deploy, and where" should be answerable
-from the filename alone.
+A repo with two *independent* deploy targets (e.g. a Pages-hosted app plus a
+Cloud-Run-hosted service with no ordering dependency between them, like musing's
+`musing-ai-service`) gets separate files per target — never a single `deploy.yml` covering
+both, since "what does this deploy, and where" should be answerable from the filename alone.
+
+**Exception**: when one deploy target's build genuinely depends on another's output from the
+*same* run (e.g. a frontend build that needs the backend's just-deployed URL baked in as
+`VITE_API_BASE` — GitHub Actions' `needs:` only works between jobs in the same workflow
+file, not across separately-triggered files), keep both as jobs in one caller file instead of
+splitting them, with the dependent job's `needs:` expressing the real ordering. caught-looking's
+`deploy.yml` is the documented instance of this: one file, two jobs (`backend` calling
+`deploy-cloud-run.yml`, `frontend` needing `backend` and calling
+`deploy-cloudflare-pages.yml`) — both deploy *mechanisms* are still fully generalized into
+dani-actions, only the caller-side orchestration stays combined.

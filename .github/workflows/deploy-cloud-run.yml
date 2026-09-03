@@ -1,0 +1,271 @@
+# Reusable Cloud Run deploy: explicit `docker build`/`docker push` to a named Artifact
+# Registry repo (not `deploy-cloudrun`'s `source:` input, which hands the build off to a
+# managed, less-controllable Cloud Build) + `deploy-cloudrun` for the actual deploy step.
+# This preserves the real advantages of an owned registry -- SHA-tagged images (an audit
+# trail of exactly what's deployed), a retention/cleanup policy, and inline build logs in the
+# Actions run -- while still using a maintained action (not hand-rolled `gcloud run deploy`
+# shell) for the deploy itself. Auth is Workload Identity Federation only; no long-lived
+# service-account key ever touches GitHub.
+#
+# `--allow-unauthenticated` is always applied: Cloud Run's IAM gate blocks every request
+# before the container runs, but the real access boundary in this portfolio's services is
+# app-level (a Supabase JWT, a signed request, etc.) -- callers have no GCP identity to
+# present, so GCP IAM isn't the enforcement point.
+#
+# Env vars are deliberately NOT passed via `deploy-cloudrun`'s own `env_vars` input: that
+# input parses commas as entry separators between KEY=VALUE pairs, silently corrupting any
+# value containing a comma (e.g. a comma-separated origins list) unless pre-escaped. Instead,
+# `env-vars-json` is written to a file and passed via `--env-vars-file` (through the generic
+# `flags:` passthrough), sidestepping the bug entirely. Because of this, env vars should be
+# non-sensitive config passed straight from the caller's own `vars.*` in its `with:` block --
+# `secrets.*` can't be referenced there anyway. Real secrets belong in GCP Secret Manager,
+# referenced by name (never value) via `gcp-secrets-json`.
+name: Deploy to Cloud Run
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: "Cloud Run service name"
+        required: true
+        type: string
+      region:
+        required: true
+        type: string
+      project-id:
+        required: true
+        type: string
+      artifact-repository:
+        description: "Name of the (already-created) Artifact Registry Docker repo"
+        required: true
+        type: string
+      workload-identity-provider:
+        description: "Full resource name of the WIF provider, e.g. projects/.../workloadIdentityPools/github/providers/<name>"
+        required: true
+        type: string
+      deploy-service-account:
+        description: "Service account email the WIF provider is bound to (roles/iam.workloadIdentityUser)"
+        required: true
+        type: string
+      source-path:
+        description: "Directory containing the Dockerfile to build (e.g. 'backend', 'service')"
+        required: true
+        type: string
+      dockerfile:
+        description: "Dockerfile path, relative to source-path"
+        required: false
+        type: string
+        default: "Dockerfile"
+      runtime-service-account:
+        description: "Service account the deployed container runs as (--service-account). Empty uses the project default compute SA."
+        required: false
+        type: string
+        default: ""
+      min-instances:
+        required: false
+        type: number
+        default: 0
+      max-instances:
+        required: false
+        type: number
+        default: 2
+      artifact-keep-count:
+        description: "Artifact Registry cleanup policy: most-recent image versions to keep"
+        required: false
+        type: number
+        default: 5
+      startup-probe-path:
+        description: "HTTP path for a Cloud Run startup probe on port 8080. Empty skips the probe."
+        required: false
+        type: string
+        default: ""
+      env-vars-json:
+        description: "JSON object of non-sensitive KEY=VALUE container env vars, e.g. built from vars.*"
+        required: false
+        type: string
+        default: "{}"
+      gcp-secrets-json:
+        description: >-
+          JSON object mapping container env var name to a GCP Secret Manager reference,
+          e.g. {"API_KEY": "API_KEY:latest"} -- names/refs only, never secret values.
+        required: false
+        type: string
+        default: "{}"
+      smoke-check-paths:
+        description: 'JSON array of paths to probe after deploy, e.g. ["/health", "/ready"]'
+        required: false
+        type: string
+        default: '["/health"]'
+      extra-flags:
+        description: "Additional raw flags appended to the gcloud deploy, for anything not covered above"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate configuration
+        run: |
+          if [ -z "${{ inputs.service-name }}" ] || [ -z "${{ inputs.region }}" ] || [ -z "${{ inputs.project-id }}" ] || [ -z "${{ inputs.artifact-repository }}" ] || [ -z "${{ inputs.workload-identity-provider }}" ] || [ -z "${{ inputs.deploy-service-account }}" ]; then
+            echo "::error::deploy-cloud-run.yml: service-name, region, project-id, artifact-repository, workload-identity-provider, and deploy-service-account are all required"
+            exit 1
+          fi
+          MIN="${{ inputs.min-instances }}"
+          MAX="${{ inputs.max-instances }}"
+          KEEP="${{ inputs.artifact-keep-count }}"
+          if [[ ! "$MAX" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::max-instances must be a positive integer without leading zeros (got ${MAX})"
+            exit 1
+          fi
+          if [[ ! "$MIN" =~ ^(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::min-instances must be a non-negative integer without leading zeros (got ${MIN})"
+            exit 1
+          fi
+          if [[ ! "$KEEP" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::artifact-keep-count must be a positive integer without leading zeros (got ${KEEP})"
+            exit 1
+          fi
+          if [ "$MIN" -gt "$MAX" ]; then
+            echo "::error::min-instances (${MIN}) cannot exceed max-instances (${MAX})"
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ inputs.workload-identity-provider }}
+          service_account: ${{ inputs.deploy-service-account }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+          gcloud auth print-access-token | docker login \
+            -u oauth2accesstoken \
+            --password-stdin "https://${{ inputs.region }}-docker.pkg.dev"
+
+      - name: Ensure Artifact Registry cleanup policy
+        run: |
+          # Keep policies win over delete. Delete anything older than 1 day that is
+          # outside the most-recent keep window so :sha images do not accumulate forever.
+          python3 - <<PY
+          import json
+
+          keep = ${{ inputs.artifact-keep-count }}
+          policy = [
+              {
+                  "name": "delete-old-versions",
+                  "action": {"type": "Delete"},
+                  "condition": {"tagState": "ANY", "olderThan": "86400s"},
+              },
+              {
+                  "name": "keep-minimum-versions",
+                  "action": {"type": "Keep"},
+                  "mostRecentVersions": {"keepCount": keep},
+              },
+          ]
+          with open("/tmp/ar-cleanup-policy.json", "w") as f:
+              json.dump(policy, f)
+          print(f"Artifact Registry keepCount={keep}")
+          PY
+          gcloud artifacts repositories set-cleanup-policies "${{ inputs.artifact-repository }}" \
+            --project "${{ inputs.project-id }}" \
+            --location "${{ inputs.region }}" \
+            --policy=/tmp/ar-cleanup-policy.json \
+            --no-dry-run
+
+      - name: Build and push container image
+        id: image
+        run: |
+          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ inputs.project-id }}/${{ inputs.artifact-repository }}/${{ inputs.service-name }}:${{ github.sha }}"
+          docker build -t "$IMAGE" -f "${{ inputs.source-path }}/${{ inputs.dockerfile }}" "${{ inputs.source-path }}"
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Write env-vars file
+        if: inputs.env-vars-json != '{}'
+        run: echo '${{ inputs.env-vars-json }}' | jq . > /tmp/cr-env.json
+
+      - name: Build secrets mapping
+        id: secrets_mapping
+        run: |
+          MAPPING=$(echo '${{ inputs.gcp-secrets-json }}' | jq -r 'to_entries | map("\(.key)=\(.value)") | join("\n")')
+          {
+            echo 'mapping<<EOF'
+            echo "$MAPPING"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build deploy flags
+        id: deploy_flags
+        run: |
+          FLAGS="--allow-unauthenticated --min-instances=${{ inputs.min-instances }} --max-instances=${{ inputs.max-instances }}"
+          if [ -n "${{ inputs.runtime-service-account }}" ]; then
+            FLAGS="$FLAGS --service-account=${{ inputs.runtime-service-account }}"
+          fi
+          if [ -n "${{ inputs.startup-probe-path }}" ]; then
+            FLAGS="$FLAGS --startup-probe=httpGet.path=${{ inputs.startup-probe-path }},httpGet.port=8080,initialDelaySeconds=0,timeoutSeconds=3,periodSeconds=5,failureThreshold=12"
+          fi
+          if [ "${{ inputs.env-vars-json }}" != "{}" ]; then
+            FLAGS="$FLAGS --env-vars-file=/tmp/cr-env.json"
+          fi
+          if [ -n "${{ inputs.extra-flags }}" ]; then
+            FLAGS="$FLAGS ${{ inputs.extra-flags }}"
+          fi
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3
+        with:
+          service: ${{ inputs.service-name }}
+          region: ${{ inputs.region }}
+          project_id: ${{ inputs.project-id }}
+          image: ${{ steps.image.outputs.image }}
+          secrets: ${{ steps.secrets_mapping.outputs.mapping || '{}' }}
+          flags: ${{ steps.deploy_flags.outputs.flags }}
+
+      - name: Smoke check
+        run: |
+          BASE_URL="${{ steps.deploy.outputs.url }}"
+          echo '${{ inputs.smoke-check-paths }}' | jq -r '.[]' | while read -r path; do
+            echo "Checking ${BASE_URL}${path}…"
+            ok=0
+            for i in $(seq 1 10); do
+              code=$(curl -sS -o /tmp/probe-body -w '%{http_code}' --max-time 10 "${BASE_URL}${path}" || true)
+              body=$(tr -d '\r' </tmp/probe-body 2>/dev/null || true)
+              if [ "$code" = "200" ]; then
+                echo "OK ${path} (attempt ${i}): ${body}"
+                ok=1
+                break
+              fi
+              echo "attempt ${i}: HTTP ${code} body=${body}"
+              sleep 3
+            done
+            if [ "$ok" != "1" ]; then
+              echo "::error::Probe ${path} did not return HTTP 200 after retries"
+              exit 1
+            fi
+          done
+
+      - name: Deploy summary
+        run: |
+          {
+            echo "## Deploy summary (${{ inputs.service-name }})"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| **git SHA** | \`${{ github.sha }}\` |"
+            echo "| **image** | \`${{ steps.image.outputs.image }}\` |"
+            echo "| **Cloud Run** | ${{ steps.deploy.outputs.url }} |"
+            echo "| **probes** | \`${{ inputs.smoke-check-paths }}\` → 200 |"
+          } >> "$GITHUB_STEP_SUMMARY"

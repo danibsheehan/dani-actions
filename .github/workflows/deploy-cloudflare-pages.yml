@@ -1,0 +1,153 @@
+# Reusable Cloudflare Pages build+deploy, symmetric to deploy-github-pages.yml -- same input
+# shape (build-command/dist-path/node-version-file, generic build-secret-1/2/3 passthrough)
+# with the publish step and auth model swapped for Cloudflare's (an API token + account ID,
+# not GitHub's own Pages OIDC). Kept as a separate reusable workflow rather than merged into
+# deploy-github-pages.yml with a provider switch: the two hosts need genuinely different
+# actions and credential models, so one file per host stays simpler than one file branching
+# on a "which host" input.
+name: Deploy to Cloudflare Pages
+
+on:
+  workflow_call:
+    inputs:
+      build-command:
+        description: "Shell command that produces the production build (e.g. 'npm run build')"
+        required: true
+        type: string
+      dist-path:
+        description: "Path to the built output to publish (e.g. 'dist')"
+        required: true
+        type: string
+      project-name:
+        description: "Cloudflare Pages project name (must already exist in Cloudflare)"
+        required: true
+        type: string
+      node-version-file:
+        description: "Path to a Node version file (e.g. .nvmrc) to read the version from"
+        required: false
+        type: string
+        default: ".nvmrc"
+      working-directory:
+        description: "Directory to build from (e.g. 'frontend' for a monorepo-style layout)"
+        required: false
+        type: string
+        default: "."
+      site-public-url:
+        description: "Optional custom domain for a soft smoke check (never fails the deploy -- custom domains often hit bot challenges from Actions' curl)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      cloudflare-api-token:
+        required: true
+      cloudflare-account-id:
+        required: true
+      build-secret-1:
+        required: false
+      build-secret-2:
+        required: false
+      build-secret-3:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: write
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate configuration
+        env:
+          CF_TOKEN: ${{ secrets.cloudflare-api-token }}
+          CF_ACCOUNT: ${{ secrets.cloudflare-account-id }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ACCOUNT" ] || [ -z "${{ inputs.project-name }}" ]; then
+            echo "::error::deploy-cloudflare-pages.yml: cloudflare-api-token, cloudflare-account-id secrets and project-name input are all required"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ${{ inputs.node-version-file }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          BUILD_SECRET_1: ${{ secrets.build-secret-1 }}
+          BUILD_SECRET_2: ${{ secrets.build-secret-2 }}
+          BUILD_SECRET_3: ${{ secrets.build-secret-3 }}
+        run: ${{ inputs.build-command }}
+
+      - id: pages
+        name: Publish to Cloudflare Pages
+        uses: cloudflare/pages-action@f0a1cd58cd66095dee69bfa18fa5efd1dde93bca # v1
+        with:
+          apiToken: ${{ secrets.cloudflare-api-token }}
+          accountId: ${{ secrets.cloudflare-account-id }}
+          projectName: ${{ inputs.project-name }}
+          directory: ${{ inputs.dist-path }}
+          branch: main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: ${{ inputs.working-directory }}
+
+      # Hard-check the *.pages.dev deployment URL -- custom domains often hit Cloudflare bot
+      # challenges (403 + cf-mitigated: challenge) from Actions' curl, so a custom domain only
+      # gets a soft, never-failing check below.
+      - name: Smoke check Pages
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.url }}
+          CF_PROJECT: ${{ inputs.project-name }}
+        run: |
+          URL="${PAGES_URL:-https://${CF_PROJECT}.pages.dev}"
+          URL="${URL%/}"
+          echo "Checking ${URL}/…"
+          ok=0
+          for i in $(seq 1 10); do
+            code=$(curl -sS -o /tmp/pages-body -w '%{http_code}' --max-time 15 "${URL}/" || true)
+            if [ "$code" = "200" ]; then
+              echo "OK / (attempt ${i})"
+              ok=1
+              break
+            fi
+            echo "attempt ${i}: HTTP ${code}"
+            sleep 3
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Pages smoke ${URL}/ did not return HTTP 200 after retries"
+            exit 1
+          fi
+          if [ -n "${{ inputs.site-public-url }}" ]; then
+            SITE="${{ inputs.site-public-url }}"
+            SITE="${SITE%/}"
+            site_code=$(curl -sS -o /tmp/site-body -w '%{http_code}' --max-time 15 "${SITE}/" || true)
+            if [ "$site_code" = "200" ]; then
+              echo "OK soft check ${SITE}/ → 200"
+            else
+              echo "::warning::site-public-url ${SITE}/ returned HTTP ${site_code} (often Cloudflare bot challenge). Upload smoke used ${URL}/ instead."
+            fi
+          fi
+
+      - name: Deploy summary
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.url }}
+          CF_PROJECT: ${{ inputs.project-name }}
+        run: |
+          PAGES="${PAGES_URL:-https://${CF_PROJECT}.pages.dev}"
+          {
+            echo "## Deploy summary (${{ inputs.project-name }})"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| **git SHA** | \`${{ github.sha }}\` |"
+            echo "| **Pages (smoke)** | ${PAGES} |"
+            echo "| **SPA smoke** | \`GET /\` on Pages URL → 200 |"
+          } >> "$GITHUB_STEP_SUMMARY"

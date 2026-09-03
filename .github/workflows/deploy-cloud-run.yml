@@ -101,6 +101,10 @@ on:
         required: false
         type: string
         default: ""
+    outputs:
+      url:
+        description: "The deployed Cloud Run service URL"
+        value: ${{ jobs.deploy.outputs.url }}
 
 jobs:
   deploy:

@@ -1,0 +1,131 @@
+# Reusable PR-guide orchestration: scaffolds an empty/default PR description, posts a
+# sticky checklist comment, and applies path-based area labels. The area taxonomy (what
+# counts as "editor" vs "sync", which verify commands and reviewer-focus notes apply) is
+# genuinely repo-specific -- each repo owns its own .github/scripts/pr_guide_lib.py and
+# .github/scripts/generate_pr_guide.py. This workflow only generalizes the orchestration
+# around those two scripts (plus generate_pr_body.py, which is ~identical everywhere), so a
+# fix to the checkout/diff/comment-posting mechanics lands once instead of being
+# hand-copied. Callers own their own `on: pull_request_target` block since workflow_call
+# can't define triggers.
+name: PR guide
+
+on:
+  workflow_call:
+    inputs:
+      labels:
+        description: >-
+          JSON array of { name, color, description } to ensure exist before labeling.
+          actions/labeler auto-creates missing labels on its own (given issues: write), but
+          without curated colors/descriptions -- set this if you want those. Default "[]"
+          skips this step entirely.
+        required: false
+        type: string
+        default: "[]"
+
+jobs:
+  guide:
+    # Keep this same-repo only; pull_request_target would otherwise grant write actions on
+    # fork PRs.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    env:
+      GITHUB_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      PYTHONPATH: ${{ github.workspace }}/.github/scripts
+    steps:
+      - name: Checkout base branch automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Run workflow scripts from the trusted base commit, not the PR head.
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Collect diff metadata
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags origin "${head}"
+          git diff --name-only "${base}...${head}" > changed-files.txt
+          diff_shortstat="$(git diff --shortstat "${base}...${head}" | tr -d '\n')"
+          echo "DIFF_SHORTSTAT=${diff_shortstat}" >> "$GITHUB_ENV"
+          {
+            echo 'COMMIT_LINES<<EOF'
+            git log --oneline "${base}...${head}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Write current PR description
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            fs.writeFileSync(
+              'current-body.md',
+              context.payload.pull_request.body ?? '',
+              'utf8',
+            );
+
+      - name: Generate PR description scaffold
+        id: body
+        run: |
+          if python3 .github/scripts/generate_pr_body.py changed-files.txt \
+            --current-body current-body.md > new-body.md; then
+            echo "update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update PR description
+        if: steps.body.outputs.update == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('new-body.md', 'utf8');
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body,
+            });
+
+      - name: Generate PR guide
+        run: python3 .github/scripts/generate_pr_guide.py changed-files.txt > pr-guide.md
+
+      - name: Post sticky PR guide comment
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v2 branch
+        with:
+          header: pr-guide
+          path: pr-guide.md
+
+      - name: Ensure labels exist
+        if: inputs.labels != '[]'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_GUIDE_LABELS: ${{ inputs.labels }}
+        with:
+          script: |
+            const labels = JSON.parse(process.env.PR_GUIDE_LABELS);
+            for (const { name, color, description } of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color,
+                  description,
+                });
+              }
+            }
+
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7
+        with:
+          sync-labels: true

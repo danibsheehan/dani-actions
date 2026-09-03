@@ -1,0 +1,26 @@
+name: Check Cobertura line-rate threshold
+description: >-
+  Fails if a Cobertura XML root line-rate is below a minimum. Runs unconditionally
+  (independent of any PR-comment step) so coverage is enforced on every push and PR, not
+  just same-repo PRs -- 5monkeys/cobertura-action's own threshold only fires inside its
+  comment step, which needs a write token and only runs on same-repo PR events.
+
+inputs:
+  path:
+    description: "Path to the Cobertura XML to check"
+    required: true
+  minimum:
+    description: "Minimum line-rate in [0, 1]"
+    required: false
+    default: "0.50"
+  label:
+    description: "Label used in success/failure messages"
+    required: false
+    default: "Coverage"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        python3 "${{ github.action_path }}/check_cobertura_line_rate.py" "${{ inputs.path }}" "${{ inputs.minimum }}" --label "${{ inputs.label }}"

@@ -366,6 +366,54 @@ build step that bakes the same URL into a frontend bundle.
 Optional inputs: `retries` (default `5`), `retry-delay-seconds` (default `5`),
 `timeout-seconds` (default `15`). See [Versioning](#versioning) above.
 
+### `go-verify.yml`
+
+Reusable Go verification gate for a single Go module — `lint` (golangci-lint) and
+`test-build` (vet, govulncheck, test+coverage, build) as two parallel jobs, each its own
+required check, mirroring `npm-verify.yml`'s job split. Not matrixed over multiple modules
+like `npm-verify.yml`'s `packages` input: there's exactly one real caller (caught-looking's
+`backend/`) to design a multi-module schema against today, so that array is deferred until a
+second Go consumer actually exists — see [Versioning](#versioning)'s spirit of not
+speculatively generalizing ahead of real usage.
+
+```yaml
+jobs:
+  backend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    uses: danibsheehan/dani-actions/.github/workflows/go-verify.yml@v12
+    with:
+      working-directory: backend
+      paths: "app:\n  - 'backend/**'\n  - 'Makefile'\n  - '.github/workflows/verify.yml'"
+      coverage-threshold: "0.50"
+      coverage-label: "Backend coverage"
+```
+
+**Coverage is enforced on every push and PR, not just same-repo PRs.**
+`5monkeys/cobertura-action`'s own `minimum_coverage`/`fail_below_threshold` inputs only take
+effect inside its PR-comment step, which needs a write token and is gated to same-repo
+`pull_request` events — it never runs on a push to `main`, and never enforces on a forked
+PR. `go-verify.yml` instead enforces via a standalone `check-cobertura-threshold` composite
+action step that runs unconditionally on every event; `cobertura-action`'s comment stays
+purely informational (`fail_below_threshold: false`), matching its original bespoke
+behavior in caught-looking.
+
+Two composite actions back the coverage pipeline, both generic (not caught-looking-specific)
+fixes for a `gocover-cobertura` quirk and a threshold check any Go module could need:
+`setup-go-env` (checkout + Go via `go-version-file`, mirrors `setup-npm-env`),
+`merge-cobertura-by-file` (collapses gocover-cobertura's duplicate per-file `<class>`
+entries), and `check-cobertura-threshold` (fails below a minimum line-rate).
+
+Other inputs: `go-version-file` (default `"go.mod"`), `race` (default `true`),
+`govulncheck-version` (default `"v1.7.0"`, pinned rather than `@latest`),
+`coverage-thresholds` (badge yellow/red, default `"50 75"`), `skip-covered` (default
+`true`), `report-name` (default `"backend"`). `golangci-lint` itself is still invoked as
+`@latest` in the `lint` job, matching its prior bespoke behavior — not pinned as part of this
+extraction.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic
@@ -382,6 +430,8 @@ three. Same target/purpose = same filename across every repo that has it:
 - **`lighthouse.yml`** — calls `lighthouse-ci.yml`
 - **`weekly-probe-smoke.yml`** — calls `health-probe.yml` (only relevant to a repo with a
   deployed backend of its own to probe)
+- **`verify.yml`**'s Go jobs — calls `go-verify.yml` (only relevant to a repo with a Go
+  module; job id/name conventions stay caller-chosen, e.g. caught-looking's `backend`)
 - **`dependabot-auto-merge.yml`**, **`pr-labels.yml`** — already-standardized
   single-purpose workflows
 

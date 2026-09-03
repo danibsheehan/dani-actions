@@ -1,0 +1,21 @@
+name: Merge Cobertura entries by file
+description: >-
+  gocover-cobertura emits separate <class> entries for methods on a type vs package-level
+  functions, so tools that list coverage by file show duplicate rows. This merges them into
+  one class per (package, filename), a generic gocover-cobertura quirk fix (not specific to
+  any one Go module).
+
+inputs:
+  input-path:
+    description: "Path to the raw Cobertura XML produced by gocover-cobertura"
+    required: true
+  output-path:
+    description: "Path to write the merged Cobertura XML to"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        python3 "${{ github.action_path }}/merge_cobertura_by_file.py" "${{ inputs.input-path }}" > "${{ inputs.output-path }}"

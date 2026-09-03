@@ -1,0 +1,25 @@
+name: Set up Go environment
+description: >-
+  Checkout + Go (via a version file), scoped to one working directory. Shared by every job
+  in go-verify.yml so parallelizing those jobs doesn't mean re-copying this boilerplate into
+  each one.
+
+inputs:
+  go-version-file:
+    description: "Path to a go.mod/go.work file to read the version from"
+    required: false
+    default: "go.mod"
+  working-directory:
+    description: "Directory the Go module lives in (e.g. 'backend')"
+    required: false
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache-dependency-path: ${{ inputs.working-directory }}/go.sum

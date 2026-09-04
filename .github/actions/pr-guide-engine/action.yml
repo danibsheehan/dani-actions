@@ -1,0 +1,56 @@
+name: PR guide engine
+description: >-
+  Generic PR-guide engine (path-to-area analysis, PR body scaffolding/merging, sticky guide
+  comment content), driven entirely by a repo-owned area-config YAML file. See dani-actions'
+  README for the config schema and the two supported verify-command strategies (grouped vs
+  additive) -- real callers genuinely differ here, not just in area names.
+
+inputs:
+  mode:
+    description: "'body' (scaffold/merge the PR description) or 'guide' (build the sticky guide comment)"
+    required: true
+  config-file:
+    description: "Path to the repo's area-config YAML"
+    required: false
+    default: .github/pr-guide-areas.yml
+  changed-paths-file:
+    description: "Path to a file listing changed paths, one per line"
+    required: true
+  current-body-file:
+    description: "Path to the current PR description (required for mode: body)"
+    required: false
+  result-file:
+    description: "Path to write the resulting markdown to"
+    required: true
+
+outputs:
+  update:
+    description: "'true' if mode=body produced an update. mode=guide always produces output when it succeeds."
+    value: ${{ steps.run.outputs.update }}
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: pip install --quiet pyyaml
+
+    # mode=body legitimately exits 1 to mean "no update needed" -- that's not a failure.
+    # mode=guide exiting non-zero is a real failure and should fail the step.
+    - id: run
+      shell: bash
+      run: |
+        set +e
+        args=(--config-file "${{ inputs.config-file }}" --changed-paths-file "${{ inputs.changed-paths-file }}" --result-file "${{ inputs.result-file }}")
+        if [ -n "${{ inputs.current-body-file }}" ]; then
+          args+=(--current-body-file "${{ inputs.current-body-file }}")
+        fi
+        python3 "${{ github.action_path }}/pr_guide_engine.py" "${{ inputs.mode }}" "${args[@]}"
+        code=$?
+        if [ "$code" -eq 0 ]; then
+          echo "update=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "update=false" >> "$GITHUB_OUTPUT"
+        fi
+        if [ "${{ inputs.mode }}" = "guide" ] && [ "$code" -ne 0 ]; then
+          exit "$code"
+        fi

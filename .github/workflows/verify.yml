@@ -20,7 +20,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: mypy
-      - run: pytest --cov --cov-report=term-missing --cov-report=xml
+      - run: pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=50
 
       - name: Cobertura markdown summary (for job summary)
         uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0

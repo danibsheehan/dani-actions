@@ -608,9 +608,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-CI (`.github/workflows/verify.yml`) runs this suite on every PR and push to `main`, plus
-[`actionlint`](https://github.com/rhysd/actionlint) against every workflow and composite
-`action.yml` in the repo.
+CI (`.github/workflows/verify.yml`) runs this suite, `ruff`, and `mypy` on every PR and push
+to `main`, plus [`actionlint`](https://github.com/rhysd/actionlint) against every workflow
+and composite `action.yml` in the repo. Test coverage is gated at a 50% minimum (`pytest --cov-fail-under=50`), matching
+`check-cobertura-threshold`'s own default for consumer repos, and reported as a job summary
+and PR comment via the same `irongut/CodeCoverageSummary` + `5monkeys/cobertura-action`
+pattern used by `go-verify.yml`/`npm-verify.yml` for consumer coverage.
 
 ## File naming conventions
 

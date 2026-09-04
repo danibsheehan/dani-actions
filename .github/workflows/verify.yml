@@ -8,13 +8,51 @@ on:
 jobs:
   python-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: pytest --cov --cov-report=term-missing
+      - run: pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Cobertura markdown summary (for job summary)
+        uses: irongut/CodeCoverageSummary@51cc3a756ddcd398d447c044c02cb6aa83fdae95 # v1.3.0
+        with:
+          filename: coverage.xml
+          badge: true
+          fail_below_min: false
+          format: markdown
+          hide_branch_rate: false
+          hide_complexity: true
+          indicators: true
+          output: file
+          thresholds: "50 75"
+
+      - name: Add coverage to GitHub Actions job summary
+        run: |
+          echo "## Code coverage: dani-actions (Cobertura)" >> "$GITHUB_STEP_SUMMARY"
+          cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Same-repo PRs only: forked PR workflows get a read-only token and cannot post
+      # comments on the base repo PR. Informational only (fail_below_threshold: false).
+      - name: Cobertura coverage comment on PR
+        if: >
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          path: coverage.xml
+          minimum_coverage: 0
+          fail_below_threshold: false
+          show_line: true
+          show_branch: true
+          skip_covered: true
+          report_name: dani-actions
 
   actionlint:
     runs-on: ubuntu-latest

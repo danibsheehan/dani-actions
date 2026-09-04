@@ -610,8 +610,11 @@ pytest
 
 CI (`.github/workflows/verify.yml`) runs this suite, `ruff`, and `mypy` on every PR and push
 to `main`, plus [`actionlint`](https://github.com/rhysd/actionlint) against every workflow
-and composite `action.yml` in the repo. Test coverage is gated at a 50% minimum (`pytest --cov-fail-under=50`), matching
-`check-cobertura-threshold`'s own default for consumer repos, and reported as a job summary
+and composite `action.yml` in the repo. Test coverage is gated at a 70% minimum
+(`pytest --cov-fail-under=70`) — a ratchet set at roughly this repo's own actual coverage,
+not `check-cobertura-threshold`'s lower 50% default for consumer repos, which exists to be a
+reasonable floor for arbitrary consumers rather than a target. Raise this number as coverage
+improves; never lower it to land a change more easily. Coverage is reported as a job summary
 and PR comment via the same `irongut/CodeCoverageSummary` + `5monkeys/cobertura-action`
 pattern used by `go-verify.yml`/`npm-verify.yml` for consumer coverage.
 

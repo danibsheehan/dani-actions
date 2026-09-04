@@ -1,12 +1,11 @@
 # Reusable PR-guide orchestration: scaffolds an empty/default PR description, posts a
 # sticky checklist comment, and applies path-based area labels. The area taxonomy (what
 # counts as "editor" vs "sync", which verify commands and reviewer-focus notes apply) is
-# genuinely repo-specific -- each repo owns its own .github/scripts/pr_guide_lib.py and
-# .github/scripts/generate_pr_guide.py. This workflow only generalizes the orchestration
-# around those two scripts (plus generate_pr_body.py, which is ~identical everywhere), so a
-# fix to the checkout/diff/comment-posting mechanics lands once instead of being
-# hand-copied. Callers own their own `on: pull_request_target` block since workflow_call
-# can't define triggers.
+# genuinely repo-specific, but the underlying engine (path->area matching, PR-body
+# scaffolding/merging, guide-comment assembly) is fully generic -- callers own only a
+# declarative .github/pr-guide-areas.yml, consumed by the pr-guide-engine composite action.
+# Callers own their own `on: pull_request_target` block since workflow_call can't define
+# triggers.
 name: PR guide
 
 on:
@@ -34,7 +33,6 @@ jobs:
       pull-requests: write
     env:
       GITHUB_REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-      PYTHONPATH: ${{ github.workspace }}/.github/scripts
     steps:
       - name: Checkout base branch automation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,11 +68,12 @@ jobs:
 
       - name: Generate PR description scaffold
         id: body
-        run: |
-          if python3 .github/scripts/generate_pr_body.py changed-files.txt \
-            --current-body current-body.md > new-body.md; then
-            echo "update=true" >> "$GITHUB_OUTPUT"
-          fi
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v17
+        with:
+          mode: body
+          changed-paths-file: changed-files.txt
+          current-body-file: current-body.md
+          result-file: new-body.md
 
       - name: Update PR description
         if: steps.body.outputs.update == 'true'
@@ -91,7 +90,11 @@ jobs:
             });
 
       - name: Generate PR guide
-        run: python3 .github/scripts/generate_pr_guide.py changed-files.txt > pr-guide.md
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v17
+        with:
+          mode: guide
+          changed-paths-file: changed-files.txt
+          result-file: pr-guide.md
 
       - name: Post sticky PR guide comment
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v2 branch

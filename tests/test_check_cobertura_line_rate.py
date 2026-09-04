@@ -14,6 +14,7 @@ def run(*args: str) -> subprocess.CompletedProcess:
         [sys.executable, str(SCRIPT), *args],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -35,6 +36,14 @@ def test_fails_default_minimum_when_below_it():
     assert result.returncode == 1
     assert "30.00%" in result.stderr
     assert "below 50%" in result.stderr
+
+
+def test_passes_when_line_rate_exactly_equals_minimum():
+    # cobertura_ok.xml has line-rate="0.75"; the check is `< minimum`, so an
+    # exact match should pass, not fail.
+    result = run(str(FIXTURES / "cobertura_ok.xml"), "0.75")
+    assert result.returncode == 0
+    assert "minimum 75%" in result.stdout
 
 
 def test_fails_explicit_custom_minimum():

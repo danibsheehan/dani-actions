@@ -3,3 +3,10 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = [".github/actions"]
+
+[tool.ruff]
+exclude = [".venv"]
+
+[tool.mypy]
+files = ["tests", ".github/actions"]
+warn_unused_configs = true

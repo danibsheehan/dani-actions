@@ -249,13 +249,12 @@ Optional input: `fail-on-severity` (default `"high"`). See [Versioning](#version
 ### `pr-guide.yml`
 
 Scaffolds an empty/default PR description, posts a sticky checklist comment, and applies
-path-based area labels. Generalizes only the *orchestration* (checkout pinned to the base
-commit, diff collection, comment posting, labeling) — the area taxonomy itself (what counts
-as "editor" vs "sync", which verify commands and reviewer-focus notes apply to each) is
-genuinely repo-specific and stays local: every consuming repo owns its own
-`.github/scripts/generate_pr_guide.py` + `.github/scripts/pr_guide_lib.py` (and
-`generate_pr_body.py`, which is close to identical everywhere but still repo-owned since
-it's checked out at the trusted base commit, not fetched from here).
+path-based area labels. Both the orchestration (checkout pinned to the base commit, diff
+collection, comment posting, labeling) *and* the underlying engine (path→area matching, PR
+body scaffolding/merging, guide-comment assembly) are generic — the only thing a consuming
+repo owns is a declarative `.github/pr-guide-areas.yml` (consumed by the
+[`pr-guide-engine`](#pr-guide-engine) composite action). This replaces what used to be ~200
+lines of near-identical Python hand-copied into every repo's `.github/scripts/`.
 
 ```yaml
 name: PR guide
@@ -281,6 +280,87 @@ you want those. See [Versioning](#versioning) above.
 at open-time, and pinning checkout to `pull_request.base.sha` already fully avoids running
 PR-authored code, so there's no additional safety a same-repo-only plain `pull_request`
 trigger would buy over this.
+
+### `pr-guide-engine`
+
+Composite action (used internally by `pr-guide.yml`, not called directly by consuming
+repos) implementing the generic PR-guide logic — path→area matching, verify-command/
+checklist/reviewer-focus assembly, PR-body scaffolding and merging, and the sticky guide
+comment's full layout. Everything it needs beyond the changed-paths list comes from the
+caller's own `.github/pr-guide-areas.yml`.
+
+**Two verify-command strategies**, since real callers genuinely differ, not just in area
+names:
+- `verify_strategy: grouped` (default) — named command groups (`verify_groups`); each area
+  optionally sets `verify_group: <name>`, and the *first* touched area's group (in area
+  order, or `verify_order` if given) wins exclusively — matching an `if`/`elif` "pick one
+  full command block" pattern. Areas may also always-additively contribute `verify_extra`
+  regardless of which group won.
+- `verify_strategy: additive` — each area independently contributes its own
+  `verify_commands` list; touched areas' contributions are unioned (de-duplicated,
+  first-occurrence order), with no exclusive grouping.
+
+**Config schema** (`.github/pr-guide-areas.yml`):
+
+```yaml
+match_mode: prefix_or_contains  # or prefix_only
+verify_strategy: grouped        # or additive
+checklist_position: start       # or end -- where always_checklist_items land
+# Optional per-function order overrides (default: area declaration order below). A real
+# caller's bespoke functions did NOT all iterate areas in the same order -- never assume one
+# order fits verify/checklist/reviewer_focus uniformly.
+verify_order: [...]
+checklist_order: [...]
+reviewer_focus_order: [...]
+
+meta_start: "<!-- pr-guide-meta:start -->"
+meta_end: "<!-- pr-guide-meta:end -->"
+summary_prompt: "<!-- What changed and why? -->"
+verify_prompt: "<!-- Commands run, manual checks, or N/A with rationale. -->"
+legacy_template_markers: ["## Checklist", "No unintended secrets"]
+extra_body_line: null  # optional line inserted before the meta block, e.g. a local-check hint
+meta_block_template: "**Touches:** {touches}\n\n..."
+
+guide_intro: "_Auto-generated from changed paths...._"
+commit_overflow_note: "_...and {n} more_"  # {n} = commits beyond the first 15
+required_checks_description: "Required checks: [verify]({ci_href}) runs ...."
+ci_workflow_path: .github/workflows/verify.yml
+pr_template_path: .github/pull_request_template.md
+no_touches_text: "none detected"
+
+always_checklist_items: ["No unintended secrets or local-only config committed"]
+fallback:
+  verify: "N/A - docs/tooling only; confirm locally if anything user-facing changed"
+  reviewer_focus: "Scope looks docs- or tooling-only; confirm there is no hidden runtime impact"
+tests_missing_rule:  # optional
+  tests_area_id: tests
+  trigger_areas: [editor, sync, database]
+  note: "Tests added or updated for changed behavior, or noted why not"
+test_file_rule:  # optional
+  suffixes: [".test.ts", ".test.tsx"]
+  substrings: [".test.", ".spec."]
+  note: "Test assertions cover the behavior under review rather than only implementation details"
+verify_groups:  # only used when verify_strategy: grouped
+  full_suite: ["`npm run lint`", "`npm run format:check`", "`npm run test:run`", "`npm run build`"]
+
+areas:
+  - id: editor
+    display: "editor"
+    prefixes: ["src/components/Editor.tsx", "..."]
+    checklist: ["..."]                 # plain strings, or {text, unless_area} to suppress
+    reviewer_focus: ["..."]            # conditionally when another area is also touched
+    verify_group: full_suite           # grouped strategy only
+    verify_extra: ["..."]              # grouped strategy only, always-additive
+    verify_commands: ["..."]           # additive strategy only
+  - id: other-area
+    ...
+other_display: "other"
+```
+
+An item in `checklist`/`reviewer_focus`/`verify_extra`/`verify_commands` can be a plain
+string, or `{text: "...", unless_area: <id>}` to suppress it when a specific other area is
+*also* touched (e.g. a generic handler-shape note that's redundant once a more specific
+API-contract note already covers the same change).
 
 ### `lighthouse-ci.yml`
 

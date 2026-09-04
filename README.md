@@ -1,7 +1,16 @@
 # dani-actions
 
-Reusable GitHub Actions workflows shared across personal project repos, so a fix or
-improvement lands once instead of being hand-copied into every repo.
+Reusable GitHub Actions workflows shared across Danielle's personal project repos, so a fix
+or improvement lands once instead of being hand-copied into every repo.
+
+**In plain English:** every project needs to run the same kinds of checks before code ships —
+does it build, do the tests pass, is a dependency insecure, should this get deployed. Rather
+than write that checklist separately in each project and let the copies quietly drift apart,
+this repo holds the actual, working checklist once. Each project just points at it and says
+which version to use.
+
+_Everything past this point is the technical reference — what each workflow does and how a
+project wires it in._
 
 ## Versioning
 

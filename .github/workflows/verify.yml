@@ -49,7 +49,7 @@ jobs:
         uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
         with:
           path: coverage.xml
-          minimum_coverage: 0
+          minimum_coverage: 50
           fail_below_threshold: false
           show_line: true
           show_branch: true

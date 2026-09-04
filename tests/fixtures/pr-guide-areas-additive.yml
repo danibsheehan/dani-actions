@@ -1,0 +1,52 @@
+match_mode: prefix_or_contains
+verify_strategy: additive
+
+areas:
+  - id: frontend
+    display: Frontend
+    prefixes: ["src/frontend/", "web/"]
+    verify_commands: ["npm test"]
+    checklist: ["Check responsive layout"]
+    reviewer_focus: ["Check UI consistency"]
+  - id: backend
+    display: Backend
+    prefixes: ["src/backend/"]
+    verify_commands: ["pytest", "make lint"]
+    checklist:
+      - text: "Check API backward compatibility"
+        unless_area: openapi
+  - id: openapi
+    display: OpenAPI
+    prefixes: ["openapi/"]
+    verify_commands: ["pytest"]
+  - id: tests
+    display: Tests
+    prefixes: ["tests/"]
+
+always_checklist_items: ["Update CHANGELOG"]
+checklist_position: end
+
+tests_missing_rule:
+  trigger_areas: [backend, frontend]
+  tests_area_id: tests
+  note: "Add/adjust tests for this change"
+
+test_file_rule:
+  suffixes: ["_test.py", ".test.ts"]
+  substrings: ["/tests/"]
+  note: "Focus on test coverage of the new behavior"
+
+fallback:
+  verify: "echo no-op"
+  reviewer_focus: "General review"
+
+other_display: Other
+no_touches_text: "none detected"
+legacy_template_markers: ["<!-- legacy-pr-template -->"]
+meta_start: "<!-- pr-guide:meta:start -->"
+meta_end: "<!-- pr-guide:meta:end -->"
+meta_block_template: "Touches: {touches}"
+summary_prompt: "Describe the change."
+verify_prompt: "Run the following:"
+guide_intro: "This PR touches the following areas."
+required_checks_description: "See CI at {ci_href}."

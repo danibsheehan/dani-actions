@@ -68,7 +68,7 @@ jobs:
 
       - name: Generate PR description scaffold
         id: body
-        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@feat/pr-guide-engine
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v17
         with:
           mode: body
           changed-paths-file: changed-files.txt
@@ -90,7 +90,7 @@ jobs:
             });
 
       - name: Generate PR guide
-        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@feat/pr-guide-engine
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v17
         with:
           mode: guide
           changed-paths-file: changed-files.txt

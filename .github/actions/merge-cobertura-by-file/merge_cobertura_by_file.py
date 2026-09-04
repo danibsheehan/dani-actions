@@ -87,8 +87,9 @@ def _recalc_package(pkg: ET.Element) -> tuple[int, int]:
     return cov, total
 
 
-def merge_cobertura(tree: ET.ElementTree) -> None:
+def merge_cobertura(tree: ET.ElementTree[ET.Element]) -> None:
     root = tree.getroot()
+    assert root is not None
     for pkg in root.findall("packages/package"):
         classes_el = pkg.find("classes")
         if classes_el is not None:
@@ -118,7 +119,9 @@ def main() -> None:
     path = sys.argv[1]
     tree = ET.parse(path)
     merge_cobertura(tree)
-    ET.indent(tree.getroot(), space="  ")
+    root = tree.getroot()
+    assert root is not None
+    ET.indent(root, space="  ")
     sys.stdout.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     tree.write(sys.stdout, encoding="unicode", xml_declaration=False)
 

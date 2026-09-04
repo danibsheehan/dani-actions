@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from conftest import load_module
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -161,6 +162,30 @@ def test_reviewer_focus_fallback_text_when_empty():
     assert focus == ["General review"]
 
 
+# -- config validation: the engine intentionally does not validate config shape,
+# it fails fast with a KeyError on the first missing required key. These tests
+# pin down that behavior so a future change to it is a deliberate decision.
+
+
+def test_areas_for_missing_areas_key_raises_key_error():
+    with pytest.raises(KeyError, match="areas"):
+        mod.areas_for("src/frontend/app.tsx", {})
+
+
+def test_verify_commands_missing_fallback_key_raises_key_error_when_no_commands_match():
+    config = load_grouped()
+    del config["fallback"]
+    with pytest.raises(KeyError, match="fallback"):
+        mod.verify_commands({"tests"}, config)
+
+
+def test_reviewer_focus_missing_fallback_key_raises_key_error_when_no_focus_matches():
+    config = load_grouped()
+    del config["fallback"]
+    with pytest.raises(KeyError, match="fallback"):
+        mod.reviewer_focus(set(), [], config)
+
+
 # -- _resolve_items --------------------------------------------------------------
 
 
@@ -253,6 +278,7 @@ def run_cli(*args: str) -> subprocess.CompletedProcess:
         [sys.executable, str(SCRIPT), *args],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

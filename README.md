@@ -598,6 +598,20 @@ deliberately non-fatal (`::warning::`, not a failed step) if the Cloudflare API 
 — unlike `pages-preview-cleanup.yml` (whose only job is cleanup), this is a secondary concern
 bolted onto a deploy job whose primary purpose already succeeded.
 
+## Testing
+
+The Python scripts behind `check-cobertura-threshold`, `merge-cobertura-by-file`, and
+`pr-guide-engine` have a pytest suite in `tests/`, run from the repo root:
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+CI (`.github/workflows/verify.yml`) runs this suite on every PR and push to `main`, plus
+[`actionlint`](https://github.com/rhysd/actionlint) against every workflow and composite
+`action.yml` in the repo.
+
 ## File naming conventions
 
 Every consuming repo should name its workflow files by what they do, not by a generic

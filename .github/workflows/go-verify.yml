@@ -38,10 +38,13 @@ on:
         type: string
         default: "v1.7.0"
       coverage-threshold:
-        description: "Minimum line-rate in [0, 1], enforced on every push and PR"
+        description: >-
+          Minimum line-rate in [0, 1], enforced on every push and PR. Defaults to 0 (no
+          floor) so a brand-new project's first commits don't fail before it has tests --
+          callers should raise this explicitly once coverage is established.
         required: false
         type: string
-        default: "0.50"
+        default: "0"
       coverage-label:
         description: "Label used in coverage threshold success/failure messages"
         required: false

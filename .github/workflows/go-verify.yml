@@ -171,6 +171,14 @@ jobs:
           cat code-coverage-results.md >> "$GITHUB_STEP_SUMMARY"
         working-directory: ${{ github.workspace }}
 
+      # GitHub Actions expressions have no arithmetic operators, so the [0,1] line-rate in
+      # coverage-threshold is converted to the integer percentage 5monkeys/cobertura-action
+      # expects via a shell step rather than inline in the expression.
+      - name: Compute coverage threshold percentage
+        id: coverage-pct
+        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
+        run: echo "value=$(python3 -c "print(round(float('${{ inputs.coverage-threshold }}') * 100))")" >> "$GITHUB_OUTPUT"
+
       # Same-repo PRs only: forked PR workflows get a read-only token and cannot post
       # comments on the base repo PR. Informational only (fail_below_threshold: false) --
       # enforcement is the standalone "Enforce coverage threshold" step above, which runs on
@@ -183,7 +191,9 @@ jobs:
         uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
         with:
           path: ${{ inputs.working-directory }}/gha-cobertura.xml
-          minimum_coverage: 0
+          # Display only -- fail_below_threshold below keeps this step from ever failing on
+          # its own; matches the real gate enforced by check-cobertura-threshold above.
+          minimum_coverage: ${{ steps.coverage-pct.outputs.value }}
           fail_below_threshold: false
           show_line: true
           show_branch: true

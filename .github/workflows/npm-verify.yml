@@ -22,7 +22,10 @@ on:
           omit/empty to never filter this package's jobs), audit (bool, default true),
           typecheck-command (default "", skips the typecheck job for this package),
           test-command, build-command, coverage-file (default "", skips coverage
-          summary/comment for this package), setup-chrome (bool, default false) }.
+          summary/comment for this package), coverage-minimum (integer 0-100, default 0 --
+          display only in the Cobertura PR comment table, e.g. to match a threshold the
+          test tool itself already enforces; never fails the build), setup-chrome (bool,
+          default false) }.
         required: true
         type: string
       doc-check-commands:
@@ -259,7 +262,10 @@ jobs:
         uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
         with:
           path: ${{ matrix.package.path }}/${{ matrix.package.coverage-file }}
-          minimum_coverage: 0
+          # Display only -- fail_below_threshold below keeps this step from ever failing on
+          # its own. coverage-minimum lets a package's real gate (e.g. a test tool's own
+          # coverage.thresholds config) be reflected here instead of always showing 0.
+          minimum_coverage: ${{ matrix.package.coverage-minimum || 0 }}
           fail_below_threshold: false
           show_line: true
           show_branch: true

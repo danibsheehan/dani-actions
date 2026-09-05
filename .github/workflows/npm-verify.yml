@@ -24,8 +24,16 @@ on:
           test-command, build-command, coverage-file (default "", skips coverage
           summary/comment for this package), coverage-minimum (integer 0-100, default 0 --
           display only in the Cobertura PR comment table, e.g. to match a threshold the
-          test tool itself already enforces; never fails the build), setup-chrome (bool,
-          default false) }.
+          test tool itself already enforces; never fails the build -- NOTE: cobertura-action
+          checks this against its own per-file "Coverage" column, which it hardcodes as
+          (line-rate + branch-rate) / 2, not against line coverage alone or any single metric
+          a test tool's own thresholds config reports. If the calling test tool gates on
+          line/branch/statement/function coverage as separate thresholds -- as most do --
+          there is no value here that reproduces that gate exactly; pick a number that
+          approximates it under the blended formula (leaning toward the branch-coverage floor,
+          since branches usually lag lines) rather than reusing the line-coverage or aggregate
+          threshold verbatim, or files that already pass the real gate will show a false ❌),
+          setup-chrome (bool, default false) }.
         required: true
         type: string
       doc-check-commands:
@@ -265,6 +273,12 @@ jobs:
           # Display only -- fail_below_threshold below keeps this step from ever failing on
           # its own. coverage-minimum lets a package's real gate (e.g. a test tool's own
           # coverage.thresholds config) be reflected here instead of always showing 0.
+          # This action's own "Coverage" column is (line-rate + branch-rate) / 2 (hardcoded,
+          # see calculateRates in 5monkeys/cobertura-action's src/cobertura.js) -- callers
+          # should not set coverage-minimum to their line-coverage or aggregate threshold
+          # verbatim, since branch coverage usually lags lines and will drag the blended
+          # number below a value that looks "real" but isn't reachable, false-flagging files
+          # that already pass the actual gate. See the `packages` input description above.
           minimum_coverage: ${{ matrix.package.coverage-minimum || 0 }}
           fail_below_threshold: false
           show_line: true

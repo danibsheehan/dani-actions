@@ -22,6 +22,9 @@ and bump every reference to match — not just the one that motivated the releas
 "what version of dani-actions is repo X on" a single, unambiguous number instead of a
 per-workflow patchwork.
 
+A new tag is created automatically by CI (`.github/workflows/auto-tag.yml`) whenever a merge
+to `main` touches `.github/workflows/**` or `.github/actions/**`.
+
 ## Workflows
 
 ### `dependabot-auto-merge.yml`

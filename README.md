@@ -22,8 +22,14 @@ and bump every reference to match — not just the one that motivated the releas
 "what version of dani-actions is repo X on" a single, unambiguous number instead of a
 per-workflow patchwork.
 
-A new tag is created automatically by CI (`.github/workflows/auto-tag.yml`) whenever a merge
-to `main` touches `.github/workflows/**` or `.github/actions/**`.
+A new tag is created automatically by CI (`.github/workflows/auto-tag.yml`) when a PR carrying
+the `release` label merges to `main`. Path-based triggering (any touch to `.github/workflows/**`
+or `.github/actions/**`) was retired because it tagged every change indiscriminately, including
+purely internal pin-bump commits (this repo dogfoods its own composite actions via
+self-referenced, version-pinned `uses:` refs) — which meant sweeping those pins to the latest
+tag created a new tag that immediately made the just-landed pins stale again. Add the `release`
+label to a PR only when it publishes a real change to a workflow or action that consumers should
+pick up.
 
 ## Workflows
 

@@ -60,6 +60,39 @@ jobs:
 Pin to a tag, not `@main` — a future change here shouldn't silently affect a consumer that
 hasn't opted in yet. See [Versioning](#versioning) above for which tag.
 
+### `auto-bump-self.yml`
+
+Keeps a consuming repo's own `danibsheehan/dani-actions/...` pins current without waiting on
+Dependabot's weekly cadence — useful since `dani-actions` itself can tag off-cycle, more often
+than once a week. On each run it checks the latest published `dani-actions` tag, sweeps every
+`danibsheehan/dani-actions/...@vN` reference in the consuming repo's `.github/workflows/*.yml`
+to that tag, and opens a PR that auto-merges once the repo's own required checks pass. If
+nothing is out of date, it's a no-op — no PR is opened.
+
+Call it from a consuming repo on a schedule (daily keeps drift small; adjust the cron to taste),
+naming the caller file `auto-bump-dani-actions.yml`:
+
+```yaml
+name: Auto-bump dani-actions references
+
+on:
+  schedule:
+    - cron: '0 13 * * *' # daily
+  workflow_dispatch:
+
+jobs:
+  bump:
+    uses: danibsheehan/dani-actions/.github/workflows/auto-bump-self.yml@v10
+    permissions:
+      contents: write
+      pull-requests: write
+```
+
+Pin to a tag, not `@main`, same as every other workflow here — see [Versioning](#versioning).
+Auto-merging the PR this opens relies on the consuming repo having `allow_auto_merge` enabled
+(repo settings) — if required status checks aren't configured on the default branch, the PR
+still merges, just without waiting on anything.
+
 ### `deploy-github-pages.yml`
 
 Build + deploy to GitHub Pages, parameterized since the build command, output path, and

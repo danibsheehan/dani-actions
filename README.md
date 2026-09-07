@@ -65,6 +65,38 @@ jobs:
 Pin to a tag, not `@main` — a future change here shouldn't silently affect a consumer that
 hasn't opted in yet. See [Versioning](#versioning) above for which tag.
 
+#### Grouping peer-locked package pairs in a consumer's `dependabot.yml`
+
+Some dependency pairs — e.g. `vitest` and `@vitest/coverage-v8` — have a strict peer
+dependency on each other's exact version. Without a dedicated group, Dependabot doesn't
+know they must move together: a major bump can land as two separate PRs, and each one
+fails CI with an unresolvable `ERESOLVE` peer-dependency conflict, since bumping only one
+half leaves the other pinned to the old major.
+
+If a consuming repo has such a pair, add a dedicated group **above** `npm-minor-and-patch`
+(or `gomod-minor-and-patch`), restricted to `update-types: [major]` only. That keeps
+minor/patch bumps of the pair falling through to the standard minor/patch group — so they
+still match the `dependabot-auto-merge.yml` allowlist above and keep auto-merging — while
+bundling only major bumps (which shouldn't auto-merge anyway) together:
+
+```yaml
+groups:
+  vitest-family:
+    patterns:
+      - "vitest"
+      - "@vitest/*"
+    update-types:
+      - major
+  npm-minor-and-patch:
+    update-types:
+      - minor
+      - patch
+```
+
+Known instances of this pattern: `baseball-collection`, `gotta-catch-em-all`, `musing`
+(root only — its `/service` entry uses `vitest` without `@vitest/coverage-v8`), and
+`caught-looking`'s `frontend/` entry all pin `vitest` + `@vitest/coverage-v8`.
+
 ### `deploy-github-pages.yml`
 
 Build + deploy to GitHub Pages, parameterized since the build command, output path, and

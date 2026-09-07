@@ -1,9 +1,12 @@
-# Auto-merges the grouped npm-minor-and-patch Dependabot PRs, and the
-# danibsheehan/dani-actions self-reference specifically, once required checks
-# pass. The dani-actions exception is safe because every tag is cumulative and
-# non-breaking by this repo's own versioning policy. All other ungrouped npm
-# majors, gomod, and github-actions bumps stay manual since they carry more
-# upgrade risk.
+# Auto-merges the grouped npm-minor-and-patch Dependabot PRs, grouped
+# security-update PRs at patch/minor level, and the danibsheehan/dani-actions
+# self-reference specifically, once required checks pass. The dani-actions
+# exception is safe because every tag is cumulative and non-breaking by this
+# repo's own versioning policy. Security-update groups can't be filtered by
+# update-types in dependabot.yml (that only applies to version-update
+# groups), so major-level security bumps are excluded here instead, via the
+# update-type check below. All other ungrouped npm majors, gomod, and
+# github-actions bumps stay manual since they carry more upgrade risk.
 name: Dependabot auto-merge
 
 on:
@@ -25,10 +28,13 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Enable auto-merge for npm-minor-and-patch group and the dani-actions self-ref
+      - name: Enable auto-merge for npm-minor-and-patch, security patch/minor, and dani-actions self-ref
         if: >-
           steps.metadata.outputs.dependency-group == 'npm-minor-and-patch' ||
-          contains(steps.metadata.outputs.dependency-names, 'danibsheehan/dani-actions')
+          contains(steps.metadata.outputs.dependency-names, 'danibsheehan/dani-actions') ||
+          (steps.metadata.outputs.dependency-group == 'security-updates' &&
+           (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+            steps.metadata.outputs.update-type == 'version-update:semver-minor'))
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

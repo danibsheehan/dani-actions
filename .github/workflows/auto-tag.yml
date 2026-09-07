@@ -68,6 +68,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      workflows: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       NEW_TAG: ${{ needs.tag.outputs.tag }}

@@ -86,6 +86,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      workflows: write
 ```
 
 Pin to a tag, not `@main`, same as every other workflow here — see [Versioning](#versioning).

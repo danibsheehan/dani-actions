@@ -1,6 +1,9 @@
-# Auto-merges only the grouped npm-minor-and-patch Dependabot PRs once required
-# checks pass. Ungrouped npm majors, gomod, and github-actions bumps stay manual
-# since they carry more upgrade risk.
+# Auto-merges the grouped npm-minor-and-patch Dependabot PRs, and the
+# danibsheehan/dani-actions self-reference specifically, once required checks
+# pass. The dani-actions exception is safe because every tag is cumulative and
+# non-breaking by this repo's own versioning policy. All other ungrouped npm
+# majors, gomod, and github-actions bumps stay manual since they carry more
+# upgrade risk.
 name: Dependabot auto-merge
 
 on:
@@ -22,8 +25,10 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Enable auto-merge for npm-minor-and-patch group
-        if: steps.metadata.outputs.dependency-group == 'npm-minor-and-patch'
+      - name: Enable auto-merge for npm-minor-and-patch group and the dani-actions self-ref
+        if: >-
+          steps.metadata.outputs.dependency-group == 'npm-minor-and-patch' ||
+          contains(steps.metadata.outputs.dependency-names, 'danibsheehan/dani-actions')
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

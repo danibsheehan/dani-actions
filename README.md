@@ -35,13 +35,14 @@ pick up.
 
 ### `dependabot-auto-merge.yml`
 
-Auto-merges the grouped `npm-minor-and-patch` Dependabot PRs, and the
-`danibsheehan/dani-actions` self-reference specifically, once required checks pass. The
-dani-actions exception is safe because every tag is cumulative and non-breaking (see
-[Versioning](#versioning)) — combined with a daily Dependabot `github-actions` schedule (see
-each consuming repo's `dependabot.yml`), this keeps a consumer's own `dani-actions` pins
-current with minimal drift, without any custom automation. All other ungrouped npm majors,
-gomod, and github-actions bumps stay manual since they carry more upgrade risk.
+Auto-merges the grouped `npm-minor-and-patch` and `gomod-minor-and-patch` Dependabot PRs,
+grouped `security-updates` PRs at patch/minor level, and the `danibsheehan/dani-actions`
+self-reference specifically, once required checks pass. The dani-actions exception is safe
+because every tag is cumulative and non-breaking (see [Versioning](#versioning)) — combined
+with a daily Dependabot `github-actions` schedule (see each consuming repo's `dependabot.yml`),
+this keeps a consumer's own `dani-actions` pins current with minimal drift, without any custom
+automation. All other ungrouped npm/gomod majors and github-actions bumps stay manual since
+they carry more upgrade risk.
 
 Call it from a consuming repo:
 

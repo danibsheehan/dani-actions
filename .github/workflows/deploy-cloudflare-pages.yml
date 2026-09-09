@@ -107,16 +107,24 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           workingDirectory: ${{ inputs.working-directory }}
 
-      # Hard-check the *.pages.dev deployment URL -- custom domains often hit Cloudflare bot
-      # challenges (403 + cf-mitigated: challenge) from Actions' curl, so a custom domain only
-      # gets a soft, never-failing check below.
+      # Hard-check the project's production alias (https://<project>.pages.dev), not
+      # steps.pages.outputs.url. cloudflare/pages-action computes that output by re-querying
+      # Cloudflare's deployments-list API *after* `wrangler pages publish` finishes, and that
+      # list call isn't guaranteed to return the deployment that was just published (a
+      # Cloudflare API consistency/ordering issue) -- it can point at a stale or unrelated
+      # deployment and 404. This workflow always publishes with branch=main (a fixed
+      # production deploy), so the production alias is flipped by Cloudflare as part of the
+      # publish itself and reliably reflects the deployment that just went out. Custom domains
+      # often hit Cloudflare bot challenges (403 + cf-mitigated: challenge) from Actions' curl,
+      # so a custom domain only gets a soft, never-failing check below.
       - name: Smoke check Pages
         env:
           PAGES_URL: ${{ steps.pages.outputs.url }}
           CF_PROJECT: ${{ inputs.project-name }}
         run: |
-          URL="${PAGES_URL:-https://${CF_PROJECT}.pages.dev}"
+          URL="https://${CF_PROJECT}.pages.dev"
           URL="${URL%/}"
+          echo "pages-action reported deployment URL: ${PAGES_URL:-<none>}"
           echo "Checking ${URL}/…"
           ok=0
           for i in $(seq 1 10); do
@@ -239,7 +247,7 @@ jobs:
           PAGES_URL: ${{ steps.pages.outputs.url }}
           CF_PROJECT: ${{ inputs.project-name }}
         run: |
-          PAGES="${PAGES_URL:-https://${CF_PROJECT}.pages.dev}"
+          PAGES="https://${CF_PROJECT}.pages.dev"
           {
             echo "## Deploy summary (${{ inputs.project-name }})"
             echo ""

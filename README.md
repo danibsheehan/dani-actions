@@ -12,6 +12,40 @@ which version to use.
 _Everything past this point is the technical reference — what each workflow does and how a
 project wires it in._
 
+## Standards established here (beyond the workflows themselves)
+
+- **Cumulative, pin-to-latest tagging**: every tag only adds or fixes a workflow, never
+  removes or breaks one — so all consuming repos pin every reference to the same latest tag,
+  swept together on release rather than left as a per-workflow patchwork. See
+  [Versioning](#versioning) below.
+- **Coverage ratchet**: a threshold is only ever raised as a test suite's real coverage
+  improves, never lowered to land a change more easily — the same policy dani-foundations
+  documents for consumer repos, enforced here at a 70% floor for this repo's own Python. See
+  [Testing](#testing) below.
+- **Secrets vs. `vars.*` discipline**: a real secret never gets referenced inside a
+  `with:` block (GitHub Actions disallows it for `workflow_call` jobs anyway); non-sensitive
+  deploy-time values go through repository variables or the generic `build-secret-1/2/3`
+  passthrough slots, and a real secret lives in GCP Secret Manager, referenced by name, never
+  by value.
+- **Workload Identity Federation only for GCP auth**: no service-account key ever touches
+  GitHub — see `deploy-cloud-run.yml` below.
+- **Don't speculatively generalize ahead of real usage**: e.g. `go-verify.yml`'s
+  single-module schema stays as-is until a second real Go consumer exists to design a
+  multi-module schema against — the same spirit as the tagging policy above.
+
+## What's here
+
+12 reusable workflows and composite actions across 4 areas: CI & verification, deploy, PR
+automation & dependencies, and monitoring. Each is documented in full under
+[Workflows](#workflows) below.
+
+- **CI & verification**: `npm-verify.yml`, `go-verify.yml`, `codeql-js.yml`,
+  `dependency-review.yml`
+- **Deploy**: `deploy-github-pages.yml`, `deploy-cloudflare-pages.yml`, `deploy-cloud-run.yml`
+- **PR automation & dependencies**: `pr-guide.yml`, `pr-guide-engine`,
+  `dependabot-auto-merge.yml`
+- **Monitoring**: `health-probe.yml`, `lighthouse-ci.yml`
+
 ## Versioning
 
 Every tag is cumulative — a new tag only adds or fixes workflows, it never removes or

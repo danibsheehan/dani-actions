@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -125,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -152,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -208,7 +208,7 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -295,7 +295,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -325,7 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v27
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v29
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.check.path || '.' }}

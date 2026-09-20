@@ -1,0 +1,38 @@
+name: Sweep repo pins
+description: >-
+  Rewrites every danibsheehan/dani-actions/...@vN reference in a checked-out repo's
+  .github/workflows/ to a target tag. Used by sweep-consumers.yml to atomically bump a
+  consumer's dani-actions pins in one pass, instead of relying on Dependabot bumping each
+  reference in a separate, out-of-sync PR.
+
+inputs:
+  workflows-dir:
+    description: "Path to the checked-out repo's .github/workflows directory"
+    required: true
+  target-tag:
+    description: "Tag to rewrite every reference to, e.g. v31"
+    required: true
+
+outputs:
+  changed:
+    description: "'true' if any file was rewritten"
+    value: ${{ steps.run.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    # Exit 1 means "nothing to change" -- not a failure, so don't let it fail the step.
+    - id: run
+      shell: bash
+      run: |
+        set +e
+        output=$(python3 "${{ github.action_path }}/sweep_repo_pins.py" "${{ inputs.workflows-dir }}" "${{ inputs.target-tag }}")
+        code=$?
+        if [ "$code" -eq 0 ]; then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "$output"
+        elif [ "$code" -eq 1 ]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+        else
+          exit "$code"
+        fi

@@ -37,7 +37,9 @@ project wires it in._
 
 12 reusable workflows and composite actions across 4 areas: CI & verification, deploy, PR
 automation & dependencies, and monitoring. Each is documented in full under
-[Workflows](#workflows) below.
+[Workflows](#workflows) below. (`sweep-consumers.yml` and `sweep-repo-pins` aren't in this
+count or catalogue — they're internal automation this repo runs on itself, not something a
+consumer wires in; see [Versioning](#versioning) above.)
 
 - **CI & verification**: `npm-verify.yml`, `go-verify.yml`, `codeql-js.yml`,
   `dependency-review.yml`
@@ -61,6 +63,27 @@ the `release` label merges to `main`. Path-based triggering (any touch to `.gith
 or `.github/actions/**`) was retired because it tagged every change indiscriminately. Add the
 `release` label to a PR only when it publishes a real change to a workflow or action that
 consumers should pick up.
+
+**Keeping a consumer's pins current**: the primary mechanism is `.github/workflows/sweep-consumers.yml`,
+a scheduled job that runs here in `dani-actions` itself (not something a consumer calls). It
+authenticates as the `dani-actions` GitHub App, discovers every repo that installation can
+access, and for each one atomically rewrites every `danibsheehan/dani-actions/...@vN` reference
+in `.github/workflows/` to the latest tag in a single PR, auto-merging once required checks
+pass. A repo opts in by installing the App on it — see
+[Onboarding a new consumer](#onboarding-a-new-consumer) below. A repo that hasn't installed the
+App instead falls back to `dependabot-auto-merge.yml` auto-merging its `dani-actions`
+self-reference bumps individually, per-file, same as before this workflow existed — real, just
+without the atomic-sweep guarantee.
+
+### Onboarding a new consumer
+
+1. Wire up the workflows this repo needs, as documented under [Workflows](#workflows) below
+   (copy the relevant `uses: danibsheehan/dani-actions/...@vN` call blocks).
+2. Install the `dani-actions` GitHub App on the repo, to opt into the automated pin sweep
+   described above. This is optional — a repo that skips it still gets its `dani-actions`
+   pins bumped, just per-file via Dependabot rather than atomically. There's no automated
+   check for "did I forget this step"; it's a manual checklist item, deliberately, since every
+   consumer repo here belongs to the same account that owns and installs the App.
 
 **This repo's own reusable workflows reference their internal composite actions
 (`setup-npm-env`, `setup-go-env`, `merge-cobertura-by-file`, `check-cobertura-threshold`,

@@ -75,6 +75,39 @@ App instead falls back to `dependabot-auto-merge.yml` auto-merging its `dani-act
 self-reference bumps individually, per-file, same as before this workflow existed — real, just
 without the atomic-sweep guarantee.
 
+### The dani-actions GitHub App
+
+`sweep-consumers.yml` authenticates as a GitHub App rather than a personal access token, so
+this is infrastructure, not just workflow code — worth documenting outside this conversation's
+history in case it ever needs rotating or recreating.
+
+- **Name**: "dani-actions sweep", owned by the `danibsheehan` account directly (not an org),
+  created under `https://github.com/settings/apps`.
+- **Installation is restricted to "Only on this account"** — no other GitHub user can install
+  it, and only repos under `danibsheehan` can ever be selected as targets. This is what makes
+  installation-based discovery in `sweep-consumers.yml` safe: the App's own installation list
+  *is* the consumer list, and only this account controls what's on it.
+- **App ID**: `5012991`. **Client ID**: `Iv23lizmylbPfB0GBHW2` (hardcoded directly in
+  `sweep-consumers.yml`'s `client-id:` input). Neither is sensitive — same as an OAuth client
+  ID, they only identify the App, they don't authenticate as it. Only the private key does.
+- **Repository permissions**: Contents (Read & write), Workflows (Read & write), Pull requests
+  (Read & write). No webhook.
+- **Requires one secret on this repo**: `DANI_ACTIONS_APP_PRIVATE_KEY` (the App's generated
+  private key, PEM format). `sweep-consumers.yml` mints short-lived installation tokens from it
+  via `actions/create-github-app-token`. If this secret is missing or the key is rotated
+  without updating it, the workflow fails loudly at the "Mint ... App token" step — it doesn't
+  silently no-op.
+- **Installed per-repo, not implied by a repo's workflow files**: a repo is only discovered by
+  `sweep-consumers.yml` once someone with admin on it installs the App there (from
+  `danibsheehan`'s account settings → Integrations → GitHub Apps), regardless of whether that
+  repo already calls `dani-actions` workflows.
+- **To recreate this App** (e.g. after losing the private key): create a new App under
+  `settings/apps/new` with the same permissions and "only on this account" restriction as
+  above, generate a new private key and replace the `DANI_ACTIONS_APP_PRIVATE_KEY` secret,
+  update the `client-id` hardcoded in `sweep-consumers.yml` to the new App's Client ID (shown
+  on its settings page, or via `GET /app` authenticated as the new App), then reinstall it on
+  each consumer repo.
+
 ### Onboarding a new consumer
 
 1. Wire up the workflows this repo needs, as documented under [Workflows](#workflows) below

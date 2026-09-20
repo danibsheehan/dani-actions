@@ -58,12 +58,21 @@ per-workflow patchwork.
 
 A new tag is created automatically by CI (`.github/workflows/auto-tag.yml`) when a PR carrying
 the `release` label merges to `main`. Path-based triggering (any touch to `.github/workflows/**`
-or `.github/actions/**`) was retired because it tagged every change indiscriminately, including
-purely internal pin-bump commits (this repo dogfoods its own composite actions via
-self-referenced, version-pinned `uses:` refs) — which meant sweeping those pins to the latest
-tag created a new tag that immediately made the just-landed pins stale again. Add the `release`
-label to a PR only when it publishes a real change to a workflow or action that consumers should
-pick up.
+or `.github/actions/**`) was retired because it tagged every change indiscriminately. Add the
+`release` label to a PR only when it publishes a real change to a workflow or action that
+consumers should pick up.
+
+**This repo's own reusable workflows reference their internal composite actions
+(`setup-npm-env`, `setup-go-env`, `merge-cobertura-by-file`, `check-cobertura-threshold`,
+`pr-guide-engine`) via same-repo relative paths, never a tag-pinned `uses:` ref.** Each job
+that needs one first checks out `danibsheehan/dani-actions` at `${{ github.workflow_sha }}`
+into a `.dani-actions-internal` subdirectory (GitHub Actions doesn't auto-resolve a reusable
+workflow's own relative-path composite actions against its own repo — the workflow's job needs
+an explicit checkout first), then calls the action from there, e.g.
+`./.dani-actions-internal/.github/actions/setup-npm-env`. This isn't just simpler than a
+tag-pinned self-reference — it's required: a tag-pinned self-reference can never be safely
+auto-released on bump, since publishing a new tag to reflect the bump immediately leaves that
+same self-reference one tag behind again, triggering another bump PR, forever.
 
 ## Workflows
 

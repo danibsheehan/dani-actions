@@ -41,13 +41,6 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
 
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
       - name: Collect diff metadata
         run: |
           base="${{ github.event.pull_request.base.sha }}"
@@ -75,7 +68,7 @@ jobs:
 
       - name: Generate PR description scaffold
         id: body
-        uses: ./.dani-actions-internal/.github/actions/pr-guide-engine
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v32
         with:
           mode: body
           changed-paths-file: changed-files.txt
@@ -97,7 +90,7 @@ jobs:
             });
 
       - name: Generate PR guide
-        uses: ./.dani-actions-internal/.github/actions/pr-guide-engine
+        uses: danibsheehan/dani-actions/.github/actions/pr-guide-engine@v32
         with:
           mode: guide
           changed-paths-file: changed-files.txt

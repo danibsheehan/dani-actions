@@ -28,7 +28,9 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.DANI_ACTIONS_APP_ID }}
+          # Client ID, not the deprecated numeric App ID input -- not sensitive (same as an
+          # OAuth client ID), so it's a plain value here rather than a secret.
+          client-id: Iv23lizmylbPfB0GBHW2
           private-key: ${{ secrets.DANI_ACTIONS_APP_PRIVATE_KEY }}
           owner: danibsheehan
 
@@ -64,7 +66,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.DANI_ACTIONS_APP_ID }}
+          client-id: Iv23lizmylbPfB0GBHW2
           private-key: ${{ secrets.DANI_ACTIONS_APP_PRIVATE_KEY }}
           owner: danibsheehan
           repositories: ${{ matrix.repo }}

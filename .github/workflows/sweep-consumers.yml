@@ -1,0 +1,105 @@
+# Centralized, atomic replacement for per-file Dependabot dani-actions bumps in a consumer
+# repo. Discovers consumer repos via the dani-actions GitHub App's own installation (opt-in:
+# a repo is swept only once its owner installs the App on it -- see README's "Onboarding a
+# new consumer" section), rather than a manually maintained list that can drift out of sync
+# with what's actually installed. Authenticates as the App (not a personal PAT) so the only
+# standing secret is the App's private key, held once here, never copied into any consumer
+# repo. A repo that hasn't installed the App keeps relying on Dependabot bumping its
+# dani-actions references individually, same as before this workflow existed.
+name: Sweep consumers
+
+on:
+  schedule:
+    - cron: '0 13 * * *' # daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      repos: ${{ steps.list.outputs.repos }}
+      target-tag: ${{ steps.tag.outputs.target-tag }}
+    steps:
+      - name: Mint installation-wide App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.DANI_ACTIONS_APP_ID }}
+          private-key: ${{ secrets.DANI_ACTIONS_APP_PRIVATE_KEY }}
+          owner: danibsheehan
+
+      - name: List repos the App installation can access
+        id: list
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          repos=$(gh api /installation/repositories --jq '[.repositories[].name]')
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+
+      - name: Look up the latest dani-actions tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/danibsheehan/dani-actions/releases/latest --jq '.tag_name')
+          echo "target-tag=$tag" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    needs: discover
+    if: needs.discover.outputs.repos != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: ${{ fromJson(needs.discover.outputs.repos) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Mint repo-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.DANI_ACTIONS_APP_ID }}
+          private-key: ${{ secrets.DANI_ACTIONS_APP_PRIVATE_KEY }}
+          owner: danibsheehan
+          repositories: ${{ matrix.repo }}
+
+      - name: Checkout consumer repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: danibsheehan/${{ matrix.repo }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: consumer-repo
+
+      - name: Sweep pins to the latest tag
+        id: sweep
+        uses: ./.github/actions/sweep-repo-pins
+        with:
+          workflows-dir: consumer-repo/.github/workflows
+          target-tag: ${{ needs.discover.outputs.target-tag }}
+
+      - name: Open (or update) the sweep PR
+        if: steps.sweep.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        working-directory: consumer-repo
+        run: |
+          tag="${{ needs.discover.outputs.target-tag }}"
+          branch="chore/sweep-dani-actions-pins-${tag}"
+          git config user.name "dani-actions-sweep[bot]"
+          git config user.email "dani-actions-sweep[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add .github/workflows
+          git commit -m "chore: sweep danibsheehan/dani-actions pins to ${tag}"
+          git push origin "$branch" --force
+
+          if [ -z "$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')" ]; then
+            gh pr create --base main --title "chore: sweep danibsheehan/dani-actions pins to ${tag}" \
+              --body "Automated sweep: brings every \`danibsheehan/dani-actions/...@vN\` reference in this repo to \`${tag}\`, per dani-actions' versioning policy (every consumer pins every reference to the same latest tag)."
+          fi
+          gh pr merge --auto --squash "$branch"

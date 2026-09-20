@@ -75,14 +75,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-go-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v32
         with:
           go-version-file: ${{ inputs.go-version-file }}
           working-directory: ${{ inputs.working-directory }}
@@ -109,14 +102,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-go-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-go-env@v32
         with:
           go-version-file: ${{ inputs.go-version-file }}
           working-directory: ${{ inputs.working-directory }}
@@ -149,24 +135,16 @@ jobs:
           go install github.com/boumenot/gocover-cobertura@v1.4.0
           "$(go env GOPATH)/bin/gocover-cobertura" < coverage.out > gha-cobertura-raw.xml
 
-      - name: Checkout dani-actions (self, for local composite actions)
-        if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
       - name: Merge Cobertura entries by file
         if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
-        uses: ./.dani-actions-internal/.github/actions/merge-cobertura-by-file
+        uses: danibsheehan/dani-actions/.github/actions/merge-cobertura-by-file@v32
         with:
           input-path: ${{ inputs.working-directory }}/gha-cobertura-raw.xml
           output-path: ${{ inputs.working-directory }}/gha-cobertura.xml
 
       - name: Enforce coverage threshold
         if: inputs.paths == '' || github.event_name != 'pull_request' || steps.filter.outputs.app == 'true'
-        uses: ./.dani-actions-internal/.github/actions/check-cobertura-threshold
+        uses: danibsheehan/dani-actions/.github/actions/check-cobertura-threshold@v32
         with:
           path: ${{ inputs.working-directory }}/gha-cobertura.xml
           minimum: ${{ inputs.coverage-threshold }}

@@ -87,15 +87,25 @@ without the atomic-sweep guarantee.
 
 **This repo's own reusable workflows reference their internal composite actions
 (`setup-npm-env`, `setup-go-env`, `merge-cobertura-by-file`, `check-cobertura-threshold`,
-`pr-guide-engine`) via same-repo relative paths, never a tag-pinned `uses:` ref.** Each job
-that needs one first checks out `danibsheehan/dani-actions` at `${{ github.workflow_sha }}`
-into a `.dani-actions-internal` subdirectory (GitHub Actions doesn't auto-resolve a reusable
-workflow's own relative-path composite actions against its own repo — the workflow's job needs
-an explicit checkout first), then calls the action from there, e.g.
-`./.dani-actions-internal/.github/actions/setup-npm-env`. This isn't just simpler than a
-tag-pinned self-reference — it's required: a tag-pinned self-reference can never be safely
-auto-released on bump, since publishing a new tag to reflect the bump immediately leaves that
-same self-reference one tag behind again, triggering another bump PR, forever.
+`pr-guide-engine`) via a tag-pinned `uses:` ref, bumped routinely by Dependabot** (e.g.
+`danibsheehan/dani-actions/.github/actions/setup-npm-env@v32`), same as any other third-party
+action. This means `main` can briefly run ahead of the latest published tag on these internal
+pins between a Dependabot bump landing and the next real release — cosmetic, and never
+released early on its own (see "add the `release` label only when..." above): doing so would
+loop forever, since publishing a tag to reflect the bump immediately leaves the self-reference
+one tag behind again, prompting another bump PR, ad infinitum.
+
+**Do not replace these with same-repo relative paths (`uses: ./.github/actions/...`).** This
+was tried once and reverted after breaking every real consumer's CI: `github.workflow_sha` (used
+to self-checkout `dani-actions` before invoking the local action) does **not** give the SHA of
+the reusable workflow file itself as resolved by the caller's `uses: ...@vN` line — it gives the
+SHA of whatever *triggered the caller's own workflow run*, i.e. a commit in the **consumer's**
+repo, not `dani-actions`. This only appeared to work in testing because the test was
+self-referential (`dani-actions` calling itself), where the caller's SHA happened to also be a
+valid `dani-actions` commit — masking the bug until it ran against a real external consumer.
+There is no reliable, built-in way for a `workflow_call` reusable workflow to learn its own
+resolved ref/SHA from within its own job steps; a tag-pinned self-reference is the correct
+tool here, not a workaround.
 
 ## Workflows
 

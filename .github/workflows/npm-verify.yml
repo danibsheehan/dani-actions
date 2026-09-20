@@ -96,14 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -132,14 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -166,14 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -200,14 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -236,14 +208,7 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -330,14 +295,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.package.path }}
@@ -367,14 +325,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout dani-actions (self, for local composite actions)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: danibsheehan/dani-actions
-          ref: ${{ github.workflow_sha }}
-          path: .dani-actions-internal
-
-      - uses: ./.dani-actions-internal/.github/actions/setup-npm-env
+      - uses: danibsheehan/dani-actions/.github/actions/setup-npm-env@v32
         with:
           node-version-file: ${{ inputs.node-version-file }}
           working-directory: ${{ matrix.check.path || '.' }}

@@ -97,15 +97,13 @@ jobs:
 
       - id: pages
         name: Publish to Cloudflare Pages
-        uses: cloudflare/pages-action@f0a1cd58cd66095dee69bfa18fa5efd1dde93bca # v1
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.cloudflare-api-token }}
           accountId: ${{ secrets.cloudflare-account-id }}
-          projectName: ${{ inputs.project-name }}
-          directory: ${{ inputs.dist-path }}
-          branch: main
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           workingDirectory: ${{ inputs.working-directory }}
+          command: pages deploy ${{ inputs.dist-path }} --project-name=${{ inputs.project-name }} --branch=main
 
       # Hard-check the project's production alias (https://<project>.pages.dev), not
       # steps.pages.outputs.url. cloudflare/pages-action computes that output by re-querying
@@ -119,7 +117,7 @@ jobs:
       # so a custom domain only gets a soft, never-failing check below.
       - name: Smoke check Pages
         env:
-          PAGES_URL: ${{ steps.pages.outputs.url }}
+          PAGES_URL: ${{ steps.pages.outputs.deployment-url }}
           CF_PROJECT: ${{ inputs.project-name }}
         run: |
           URL="https://${CF_PROJECT}.pages.dev"
@@ -244,7 +242,7 @@ jobs:
 
       - name: Deploy summary
         env:
-          PAGES_URL: ${{ steps.pages.outputs.url }}
+          PAGES_URL: ${{ steps.pages.outputs.deployment-url }}
           CF_PROJECT: ${{ inputs.project-name }}
         run: |
           PAGES="https://${CF_PROJECT}.pages.dev"
